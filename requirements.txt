@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+pandas
+feedparser
+anthropic
+python-dotenv
+cloudscraper
+lxml
+sendgrid

@@ -1,0 +1,90 @@
+2026-03-29 21:45:17,847 - INFO - Starting Lever scrape for Flutter Entertainment
+2026-03-29 21:45:21,432 - ERROR - Failed to fetch Flutter Entertainment Lever page: 404
+2026-03-29 21:45:24,892 - INFO - Starting Workable scrape for STATSports
+2026-03-29 21:45:28,684 - INFO - Skipping Stats Perform - Oracle HCM requires JavaScript rendering
+2026-03-29 21:45:31,715 - INFO - Starting Lever scrape for WHOOP
+2026-03-29 21:45:33,235 - INFO - Scraped 117 jobs from WHOOP
+2026-03-29 21:45:37,200 - INFO - Starting LinkedIn scrape for sports technology in Ireland
+2026-03-29 21:46:00,203 - INFO - LinkedIn scraping completed, found 300 jobs
+2026-03-29 21:46:00,235 - INFO - Starting LinkedIn scrape for sports analytics in Ireland
+2026-03-29 21:46:07,392 - INFO - LinkedIn scraping completed, found 18 jobs
+2026-03-29 21:46:10,394 - INFO - Starting LinkedIn scrape for sports data in Ireland
+2026-03-29 21:46:20,751 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:46:23,752 - INFO - Starting LinkedIn scrape for sports software in Ireland
+2026-03-29 21:46:30,934 - INFO - LinkedIn scraping completed, found 118 jobs
+2026-03-29 21:46:33,936 - INFO - Starting LinkedIn scrape for sports digital in Ireland
+2026-03-29 21:46:41,584 - INFO - LinkedIn scraping completed, found 118 jobs
+2026-03-29 21:46:44,585 - INFO - Starting LinkedIn scrape for performance technology in Ireland
+2026-03-29 21:46:52,758 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:46:55,928 - INFO - Filtered to 464 relevant sports technology jobs
+2026-03-29 21:46:55,930 - INFO - Removed duplicates, 218 unique jobs remaining
+2026-03-29 21:46:56,002 - INFO - Saved 218 jobs to sportstech_jobs_ireland.csv
+2026-03-29 21:46:56,011 - INFO - Enhanced SportsTech job scraper completed, data saved to sportstech_jobs_ireland.csv
+2026-03-29 21:52:38,048 - INFO - Starting Lever scrape for Flutter Entertainment
+2026-03-29 21:52:39,332 - ERROR - Failed to fetch Flutter Entertainment Lever page: 404
+2026-03-29 21:52:42,555 - INFO - Starting Workable scrape for STATSports
+2026-03-29 21:52:46,259 - INFO - Skipping Stats Perform - Oracle HCM requires JavaScript rendering
+2026-03-29 21:52:49,389 - INFO - Starting Lever scrape for WHOOP
+2026-03-29 21:52:53,136 - INFO - Scraped 117 jobs from WHOOP
+2026-03-29 21:52:57,075 - INFO - Starting LinkedIn scrape for sports technology in Ireland
+2026-03-29 21:53:19,161 - INFO - LinkedIn scraping completed, found 300 jobs
+2026-03-29 21:53:19,162 - INFO - Starting LinkedIn scrape for sports analytics in Ireland
+2026-03-29 21:53:26,442 - INFO - LinkedIn scraping completed, found 18 jobs
+2026-03-29 21:53:29,444 - INFO - Starting LinkedIn scrape for sports data in Ireland
+2026-03-29 21:53:38,017 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:53:41,019 - INFO - Starting LinkedIn scrape for sports software in Ireland
+2026-03-29 21:53:49,898 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:53:52,899 - INFO - Starting LinkedIn scrape for sports digital in Ireland
+2026-03-29 21:54:01,391 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:54:04,393 - INFO - Starting LinkedIn scrape for performance technology in Ireland
+2026-03-29 21:54:13,011 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 21:54:16,186 - INFO - Filtered to 466 relevant sports technology jobs
+2026-03-29 21:54:16,189 - INFO - Removed duplicates, 218 unique jobs remaining
+2026-03-29 21:54:16,290 - INFO - Saved 218 jobs to sportstech_jobs_ireland.csv
+2026-03-29 21:54:16,303 - INFO - Enhanced SportsTech job scraper completed, data saved to sportstech_jobs_ireland.csv
+2026-03-29 22:58:22,851 - INFO - Starting Lever scrape for Flutter Entertainment
+2026-03-29 22:58:25,618 - ERROR - Failed to fetch Flutter Entertainment Lever page: 404
+2026-03-29 22:58:27,983 - INFO - Starting Workable scrape for STATSports
+2026-03-29 22:58:33,035 - INFO - Skipping Stats Perform - Oracle HCM requires JavaScript rendering
+2026-03-29 22:58:36,726 - INFO - Starting Lever scrape for WHOOP
+2026-03-29 22:58:37,801 - INFO - Scraped 117 jobs from WHOOP
+2026-03-29 22:58:42,279 - ERROR - Adzuna error: 404 Client Error: Not Found for url: https://api.adzuna.com/v1/api/jobs/ie/search/1?app_id=07a66aae&app_key=8fd168a7a6d742c2867188194458a845&results_per_page=50&what=sports+technology&where=ireland&content-type=application%2Fjson
+2026-03-29 22:58:42,280 - INFO - Starting LinkedIn scrape for sports technology in Ireland
+2026-03-29 22:59:03,719 - INFO - LinkedIn scraping completed, found 300 jobs
+2026-03-29 22:59:03,720 - INFO - Starting LinkedIn scrape for sports analytics in Ireland
+2026-03-29 22:59:10,565 - INFO - LinkedIn scraping completed, found 18 jobs
+2026-03-29 22:59:13,566 - INFO - Starting LinkedIn scrape for sports data in Ireland
+2026-03-29 22:59:21,562 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 22:59:24,563 - INFO - Starting LinkedIn scrape for sports software in Ireland
+2026-03-29 22:59:33,247 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 22:59:36,248 - INFO - Starting LinkedIn scrape for sports digital in Ireland
+2026-03-29 22:59:45,428 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 22:59:48,430 - INFO - Starting LinkedIn scrape for performance technology in Ireland
+2026-03-29 22:59:57,580 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 23:00:00,724 - INFO - Filtered to 343 relevant sports technology jobs
+2026-03-29 23:00:00,726 - INFO - Removed duplicates, 189 unique jobs remaining
+2026-03-29 23:00:00,826 - INFO - Saved 189 jobs to sportstech_jobs_ireland.csv
+2026-03-29 23:00:00,843 - INFO - Enhanced SportsTech job scraper completed, data saved to sportstech_jobs_ireland.csv
+2026-03-29 23:08:20,175 - INFO - Starting Lever scrape for Flutter Entertainment
+2026-03-29 23:08:22,299 - ERROR - Failed to fetch Flutter Entertainment Lever page: 404
+2026-03-29 23:08:25,513 - INFO - Starting Workable scrape for STATSports
+2026-03-29 23:08:29,014 - INFO - Skipping Stats Perform - Oracle HCM requires JavaScript rendering
+2026-03-29 23:08:31,342 - INFO - Starting Lever scrape for WHOOP
+2026-03-29 23:08:57,556 - INFO - Scraped 6 jobs from WHOOP
+2026-03-29 23:09:02,527 - ERROR - Adzuna error: 404 Client Error: Not Found for url: https://api.adzuna.com/v1/api/jobs/ie/search/1?app_id=07a66aae&app_key=8fd168a7a6d742c2867188194458a845&results_per_page=50&what=sports+technology&where=ireland&content-type=application%2Fjson
+2026-03-29 23:09:02,528 - INFO - Starting LinkedIn scrape for sports technology in Ireland
+2026-03-29 23:09:22,845 - INFO - LinkedIn scraping completed, found 300 jobs
+2026-03-29 23:09:22,845 - INFO - Starting LinkedIn scrape for sports analytics in Ireland
+2026-03-29 23:09:29,730 - INFO - LinkedIn scraping completed, found 18 jobs
+2026-03-29 23:09:32,731 - INFO - Starting LinkedIn scrape for sports data in Ireland
+2026-03-29 23:09:41,117 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 23:09:44,120 - INFO - Starting LinkedIn scrape for sports software in Ireland
+2026-03-29 23:09:52,823 - INFO - LinkedIn scraping completed, found 118 jobs
+2026-03-29 23:09:55,825 - INFO - Starting LinkedIn scrape for sports digital in Ireland
+2026-03-29 23:10:02,597 - INFO - LinkedIn scraping completed, found 118 jobs
+2026-03-29 23:10:05,598 - INFO - Starting LinkedIn scrape for performance technology in Ireland
+2026-03-29 23:10:13,726 - INFO - LinkedIn scraping completed, found 120 jobs
+2026-03-29 23:10:16,816 - INFO - Filtered to 228 relevant sports technology jobs
+2026-03-29 23:10:16,823 - INFO - Removed duplicates, 77 unique jobs remaining
+2026-03-29 23:10:16,958 - INFO - Saved 77 jobs to sportstech_jobs_ireland.csv
+2026-03-29 23:10:16,969 - INFO - Enhanced SportsTech job scraper completed, data saved to sportstech_jobs_ireland.csv
