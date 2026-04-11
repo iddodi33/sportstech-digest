@@ -9,13 +9,16 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import urllib.parse
 
 import anthropic
 import feedparser
+import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sendgrid import SendGridAPIClient
@@ -116,56 +119,161 @@ def save_seen(seen: set) -> None:
 # Feed fetching
 # ---------------------------------------------------------------------------
 
-def _parse_date(entry) -> datetime | None:
+_NO_CACHE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def fetch_feed_fresh(url: str):
+    """
+    Fetch a Google News RSS feed via requests with cache-busting headers
+    and a timestamp query parameter, then parse with feedparser.
+    Falls back to plain feedparser on any requests error.
+    """
+    separator = "&" if "?" in url else "?"
+    bust_url  = f"{url}{separator}ts={int(time.time())}"
+    try:
+        resp = requests.get(bust_url, headers=_NO_CACHE_HEADERS, timeout=15)
+        resp.raise_for_status()
+        return feedparser.parse(resp.content)
+    except Exception as exc:
+        log.warning("fetch_feed_fresh failed for %s (%s) — falling back to feedparser", url[:80], exc)
+        try:
+            return feedparser.parse(url)
+        except Exception:
+            return None
+
+_DATE_FORMATS = [
+    '%a, %d %b %Y %H:%M:%S %z',
+    '%a, %d %b %Y %H:%M:%S GMT',
+    '%Y-%m-%dT%H:%M:%S%z',
+    '%Y-%m-%dT%H:%M:%SZ',
+    '%Y-%m-%d %H:%M:%S',
+]
+
+
+def parse_date_robust(date_str: str) -> datetime | None:
+    """Parse a date string to a UTC-aware datetime, trying multiple formats."""
+    if not date_str:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except ValueError:
+            continue
+    try:
+        dt = parsedate_to_datetime(date_str)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        pass
+    return None
+
+
+def _entry_pub_dt(entry) -> datetime | None:
+    """
+    Extract a UTC-aware datetime from a feedparser entry.
+    Tries published_parsed (time tuple) first — most reliable cross-platform.
+    Falls back to string parsing of published/updated fields.
+    """
+    # published_parsed is a UTC time.struct_time — most reliable
     if hasattr(entry, "published_parsed") and entry.published_parsed:
         try:
             return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
         except Exception:
             pass
-    return None
+    # String fallback
+    date_str = getattr(entry, "published", "") or getattr(entry, "updated", "")
+    return parse_date_robust(date_str)
 
 
-def fetch_recent_articles(cutoff: datetime) -> tuple[list[dict], int]:
+def is_within_hours(entry, hours: int = 25) -> tuple[bool, datetime | None]:
+    """
+    Return (within_cutoff, pub_dt).
+    If the date cannot be parsed at all, returns (True, None) — include
+    rather than silently drop articles with unparseable dates.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    pub_dt = _entry_pub_dt(entry)
+    if pub_dt is None:
+        return True, None  # can't parse → don't discard
+    return pub_dt >= cutoff, pub_dt
+
+
+def fetch_recent_articles(hours: int = LOOKBACK_HOURS) -> tuple[list[dict], int]:
     """Returns (articles_within_cutoff, total_fetched_before_filter)."""
     all_articles = []
+    recent_articles = []
     seen_links: set[str] = set()
+    date_check_count = 0
+    newest_pub_dt: datetime | None = None
 
     for url in GOOGLE_NEWS_FEEDS:
         try:
-            feed = feedparser.parse(url, request_headers=_HEADERS)
+            feed = fetch_feed_fresh(url)
+            if feed is None:
+                continue
             for entry in feed.entries:
                 raw_link = getattr(entry, "link", "")
                 if not raw_link:
                     continue
-                pub_dt = _parse_date(entry)
-                if pub_dt is None:
-                    continue  # skip unparseable dates
+
+                within, pub_dt = is_within_hours(entry, hours)
                 title = getattr(entry, "title", "").strip()
+
+                # Diagnostic: log date info for the first 3 articles seen
+                if date_check_count < 3:
+                    log.info(
+                        "[DATE CHECK] Article: %s | parsed_date: %s | within_%dh: %s",
+                        title[:50], pub_dt, hours, within,
+                    )
+                    date_check_count += 1
+
                 real_link, is_fallback = _extract_real_url(entry, title)
                 if real_link in seen_links:
                     continue
                 seen_links.add(real_link)
-                if is_fallback:
-                    log.debug("URL fallback (search link) for: %s", title[:80])
-                all_articles.append({
+
+                pub_iso = pub_dt.isoformat() if pub_dt else ""
+                article = {
                     "title":            title,
                     "source":           getattr(feed.feed, "title", url),
-                    "pubDate":          pub_dt.isoformat(),
-                    "_pub_dt":          pub_dt,
+                    "pubDate":          pub_iso,
                     "link":             real_link,
                     "link_is_fallback": is_fallback,
                     "snippet":          re.sub(r"<[^>]+>", "", getattr(entry, "summary", "") or "")[:300].strip(),
-                })
+                }
+                all_articles.append(article)
+                if within:
+                    recent_articles.append(article)
+                if pub_dt and (newest_pub_dt is None or pub_dt > newest_pub_dt):
+                    newest_pub_dt = pub_dt
+                if is_fallback:
+                    log.debug("URL fallback (search link) for: %s", title[:80])
+
         except Exception as exc:
             log.warning("Feed fetch failed (%s): %s", url[:80], exc)
 
-    total = len(all_articles)
-    recent = [a for a in all_articles if a["_pub_dt"] >= cutoff]
-    for a in recent:
-        del a["_pub_dt"]
+    # Freshness diagnostic
+    if newest_pub_dt:
+        hours_ago = (datetime.now(timezone.utc) - newest_pub_dt).total_seconds() / 3600
+        log.info(
+            "[FRESHNESS] Newest article found: %s (%.1fh ago)",
+            newest_pub_dt.strftime("%Y-%m-%d %H:%M UTC"), hours_ago,
+        )
+    else:
+        log.warning("[FRESHNESS] Could not determine newest article date.")
 
-    log.info("Fetched %d articles total, %d within last %dh", total, len(recent), LOOKBACK_HOURS)
-    return recent, total
+    log.info("Fetched %d articles total, %d within last %dh", len(all_articles), len(recent_articles), hours)
+    return recent_articles, len(all_articles)
 
 
 # ---------------------------------------------------------------------------
@@ -483,14 +591,14 @@ JSON array of groups:"""
 # ---------------------------------------------------------------------------
 
 def run():
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     seen   = load_seen()
     unsent = []
 
-    log.info("Daily monitor — cutoff: %s UTC", cutoff.strftime("%Y-%m-%d %H:%M"))
+    cutoff_display = (datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)).strftime("%Y-%m-%d %H:%M")
+    log.info("Daily monitor — cutoff: %s UTC (last %dh)", cutoff_display, LOOKBACK_HOURS)
 
     # 1. Fetch
-    recent_articles, total_fetched = fetch_recent_articles(cutoff)
+    recent_articles, total_fetched = fetch_recent_articles(LOOKBACK_HOURS)
     if not recent_articles:
         log.info("No articles within last %dh — exiting.", LOOKBACK_HOURS)
         print("=== Daily Monitor Complete ===")

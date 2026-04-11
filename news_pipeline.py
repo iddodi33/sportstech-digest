@@ -8,6 +8,7 @@ import calendar
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
@@ -48,18 +49,43 @@ HIGH_QUALITY_SOURCES = {
 MEDIUM_QUALITY_SOURCES = {
     "businessplus.ie",
     "techcentral.ie",
+    "sportsbusinessjournal.com",
+    "irishrugby.ie",
+    "gaa.ie",
+    "irishmirror.ie",
+    "businesswire.com",
+    "gov.ie",
 }
 LOW_QUALITY_SOURCES = {
     "irishtechnews.ie",
+    "limerickleader.ie",
+    "advertiser.ie",
+}
+
+# High-volume broadsheets: full feeds require strict keyword filtering
+# to prevent non-sportstech content flooding results.
+BROADSHEET_SOURCES = {
+    "independent.ie",
+    "irishtimes.com",
+    "irishexaminer.com",
+}
+
+_BROADSHEET_KEYWORDS = {
+    "sport", "sports", "sportstech", "tech", "startup", "funding",
+    "digital", "gaa", "rugby", "football", "soccer", "esports",
+    "fitness", "stadium", "arena", "wearable", "data", "analytics",
+    "ai", "innovation", "ireland",
 }
 
 CAP_HIGH        = 15
+CAP_BROADSHEET  = 5   # strict cap for high-volume broadsheets
 CAP_MEDIUM      = 5
 CAP_LOW         = 3
 CAP_GOOGLE_NEWS = 10
 # -------------------------------------------------------------------------
 
 SITE_RSS_FEEDS = [
+    # High quality — sportstech focused
     "https://www.siliconrepublic.com/feed",
     "https://sportforbusiness.com/feed",
     "https://www.thinkbusiness.ie/feed/",
@@ -113,12 +139,17 @@ GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=%22Trev+Keane%22+Feenix&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Colin+Deering%22+Anyscor&hl=en-IE&gl=IE&ceid=IE:en",
     # LinkedIn post monitoring via Google News
-    "https://news.google.com/rss/search?q=%22Keith+Brock%22+sportstech+site:linkedin.com&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Rob+Hartnett%22+site:linkedin.com&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Aimee+Williams%22+site:linkedin.com&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Keith+Brock%22+sportstech+linkedin&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Rob+Hartnett%22+sport+linkedin&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Aimee+Williams%22+IDA+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
     # Europe sportstech
     "https://news.google.com/rss/search?q=sportstech+europe+startup&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=sports+technology+funding+europe&hl=en-IE&gl=IE&ceid=IE:en",
+    # Source-name keyword queries
+    "https://news.google.com/rss/search?q=%22Irish+Times%22+sports+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Irish+Independent%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Irish+Examiner%22+sport+tech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Business+Post%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
 ]
 
 # Domains whose RSS is malformed or absent — scraped as fallback when RSS yields 0 entries.
@@ -139,6 +170,41 @@ _HEADERS = {
 
 
 # ---------------------------------------------------------------------------
+# Cache-busting feed fetcher (Google News only)
+# ---------------------------------------------------------------------------
+
+_NO_CACHE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def fetch_feed_fresh(url: str):
+    """
+    Fetch a Google News RSS feed via requests with cache-busting headers
+    and a timestamp query parameter, then parse with feedparser.
+    Falls back to plain feedparser on any requests error.
+    """
+    separator = "&" if "?" in url else "?"
+    bust_url  = f"{url}{separator}ts={int(time.time())}"
+    try:
+        resp = requests.get(bust_url, headers=_NO_CACHE_HEADERS, timeout=10)
+        resp.raise_for_status()
+        return feedparser.parse(resp.content)
+    except Exception as exc:
+        log.warning("fetch_feed_fresh failed for %s (%s) — falling back", url[:80], exc)
+        try:
+            return feedparser.parse(url)
+        except Exception:
+            return None
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -156,6 +222,8 @@ def _cap_for(url: str, feed_type: str) -> int:
     if feed_type == "google_news":
         return CAP_GOOGLE_NEWS
     domain = _domain(url)
+    if domain in BROADSHEET_SOURCES:
+        return CAP_BROADSHEET
     if domain in HIGH_QUALITY_SOURCES:
         return CAP_HIGH
     if domain in MEDIUM_QUALITY_SOURCES:
@@ -241,7 +309,7 @@ def _parse_feed_lxml(url: str) -> list[dict]:
     """
     try:
         from lxml import etree
-        resp = requests.get(url, timeout=15, headers=_HEADERS)
+        resp = requests.get(url, timeout=10, headers=_HEADERS)
         resp.raise_for_status()
         try:
             root = etree.fromstring(resp.content)
@@ -290,7 +358,7 @@ def _scrape_articles(url: str, source_label: str, failed_sources: list) -> tuple
     """
     empty_stats = {"total_entries": 0, "date_dropped": 0, "unknown_date": 0, "kept": 0}
     try:
-        resp = requests.get(url, timeout=20, headers=_HEADERS)
+        resp = requests.get(url, timeout=10, headers=_HEADERS)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
     except Exception as exc:
@@ -394,10 +462,17 @@ def fetch_feed(
         "total_entries": 0, "date_dropped": 0, "unknown_date": 0,
         "kept": 0, "method": "rss", "oldest_date": "—", "newest_date": "—",
     }
-    is_bebeez = _domain(url) == "bebeez.eu"
+    is_bebeez     = _domain(url) == "bebeez.eu"
+    is_broadsheet = _domain(url) in BROADSHEET_SOURCES
 
     try:
-        feed = feedparser.parse(url)
+        # Use cache-busting fetcher for Google News; plain feedparser for direct site RSS
+        if feed_type == "google_news":
+            feed = fetch_feed_fresh(url)
+            if feed is None:
+                raise ValueError("fetch_feed_fresh returned None")
+        else:
+            feed = feedparser.parse(url)
         if feed.bozo and not feed.entries:
             raise ValueError(f"Feed bozo with no entries: {feed.bozo_exception}")
     except Exception as exc:
@@ -424,8 +499,16 @@ def fetch_feed(
 
             # bebeez.eu geo-filter: only keep Ireland/UK content
             if is_bebeez and not any(t in title.lower() for t in _BEBEEZ_GEO_TERMS):
-                date_dropped += 1  # count as filtered-out for stats
+                date_dropped += 1
                 continue
+
+            # Broadsheet keyword filter: high-volume Irish nationals must have
+            # at least one sportstech signal in the title to be kept
+            if is_broadsheet:
+                title_lower = title.lower()
+                if not any(kw in title_lower for kw in _BROADSHEET_KEYWORDS):
+                    date_dropped += 1
+                    continue
 
             snippet = _strip_html(
                 entry.get("summary", "") or entry.get("description", "")
@@ -522,11 +605,18 @@ def run() -> list[dict]:
     grand_unknown_date  = 0
     all_articles: list[dict] = []
 
+    TOTAL_TIMEOUT_SECS = 300  # 5 minutes hard cap across all feeds
+    run_start = time.time()
+
     for feed_type, feeds in [
         ("site_rss",    SITE_RSS_FEEDS),
         ("google_news", GOOGLE_NEWS_FEEDS),
     ]:
         for url in feeds:
+            if time.time() - run_start > TOTAL_TIMEOUT_SECS:
+                log.warning("Total fetch time exceeded %ds — stopping early with %d articles so far", TOTAL_TIMEOUT_SECS, len(all_articles))
+                break
+
             label = label_for(url, feed_type)
             cap   = _cap_for(url, feed_type)
 
