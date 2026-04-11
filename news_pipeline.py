@@ -6,8 +6,11 @@ Deduplicates by URL and saves to news_raw_YYYY-MM.json.
 
 import calendar
 import json
+import os
 import logging
+import platform
 import re
+import socket
 import time
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
@@ -170,38 +173,42 @@ _HEADERS = {
 
 
 # ---------------------------------------------------------------------------
-# Cache-busting feed fetcher (Google News only)
+# Feed fetcher with socket-level timeout (works on Windows SSL)
 # ---------------------------------------------------------------------------
 
-_NO_CACHE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
+_SOCKET_TIMEOUT = 10  # seconds; applied at socket level so it works on Windows
 
 
 def fetch_feed_fresh(url: str):
     """
-    Fetch a Google News RSS feed via requests with cache-busting headers
-    and a timestamp query parameter, then parse with feedparser.
-    Falls back to plain feedparser on any requests error.
+    Fetch an RSS feed via feedparser with a socket-level timeout.
+    Using socket.setdefaulttimeout() rather than requests.get() correctly
+    interrupts hanging SSL connections on Windows where urllib/feedparser
+    can stall indefinitely on certain TLS handshakes.
     """
-    separator = "&" if "?" in url else "?"
-    bust_url  = f"{url}{separator}ts={int(time.time())}"
+    old = socket.getdefaulttimeout()
     try:
-        resp = requests.get(bust_url, headers=_NO_CACHE_HEADERS, timeout=10)
-        resp.raise_for_status()
-        return feedparser.parse(resp.content)
+        socket.setdefaulttimeout(_SOCKET_TIMEOUT)
+        return feedparser.parse(url)
     except Exception as exc:
-        log.warning("fetch_feed_fresh failed for %s (%s) — falling back", url[:80], exc)
-        try:
-            return feedparser.parse(url)
-        except Exception:
-            return None
+        log.warning("fetch_feed_fresh failed for %s (%s)", url[:80], exc)
+        return None
+    finally:
+        socket.setdefaulttimeout(old)
+
+
+def google_news_responsive() -> bool:
+    """Quick pre-flight check: can we get at least one entry from Google News RSS?"""
+    test_url = "https://news.google.com/rss/search?q=test&hl=en-IE&gl=IE&ceid=IE:en"
+    old = socket.getdefaulttimeout()
+    try:
+        socket.setdefaulttimeout(8)
+        feed = feedparser.parse(test_url)
+        return len(feed.entries) > 0
+    except Exception:
+        return False
+    finally:
+        socket.setdefaulttimeout(old)
 
 
 # ---------------------------------------------------------------------------
@@ -466,13 +473,18 @@ def fetch_feed(
     is_broadsheet = _domain(url) in BROADSHEET_SOURCES
 
     try:
-        # Use cache-busting fetcher for Google News; plain feedparser for direct site RSS
+        # Both paths use socket-level timeout; fetch_feed_fresh wraps the same logic
         if feed_type == "google_news":
             feed = fetch_feed_fresh(url)
             if feed is None:
                 raise ValueError("fetch_feed_fresh returned None")
         else:
-            feed = feedparser.parse(url)
+            _old = socket.getdefaulttimeout()
+            try:
+                socket.setdefaulttimeout(_SOCKET_TIMEOUT)
+                feed = feedparser.parse(url)
+            finally:
+                socket.setdefaulttimeout(_old)
         if feed.bozo and not feed.entries:
             raise ValueError(f"Feed bozo with no entries: {feed.bozo_exception}")
     except Exception as exc:
@@ -589,6 +601,66 @@ def fetch_feed(
 
 
 # ---------------------------------------------------------------------------
+# Supabase company feeds
+# ---------------------------------------------------------------------------
+
+CAP_SUPABASE = 3  # max articles per company query
+
+
+def get_supabase_company_feeds() -> list[tuple[str, str]]:
+    """
+    Fetch Irish-founded company names from Supabase REST API directly.
+    Uses requests + Supabase PostgREST API — no supabase package needed.
+    """
+    try:
+        supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        anon_key     = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if not supabase_url or not anon_key:
+            log.warning("Supabase credentials not found — skipping company feeds")
+            return []
+
+        endpoint = f"{supabase_url}/rest/v1/companies"
+        headers  = {
+            "apikey":        anon_key,
+            "Authorization": f"Bearer {anon_key}",
+            "Content-Type":  "application/json",
+        }
+        params = {
+            "select":           "name,website,total_funding,employees",
+            "is_irish_founded": "eq.true",
+            "is_fdi":           "eq.false",
+            "order":            "total_funding.desc.nullslast",
+            "limit":            "30",
+        }
+
+        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
+        response.raise_for_status()
+        companies = response.json()
+
+        log.info("Fetched %d Irish companies from Supabase", len(companies))
+
+        feeds = []
+        for company in companies:
+            name = company.get("name", "").strip()
+            if not name or len(name) < 3:
+                continue
+            encoded   = name.replace(" ", "+")
+            query_url = (
+                f"https://news.google.com/rss/search?q=%22{encoded}%22+ireland"
+                f"&hl=en-IE&gl=IE&ceid=IE:en"
+            )
+            feeds.append((query_url, f"Supabase: {name}"))
+
+        log.info("Generated %d company Google News queries", len(feeds))
+        return feeds
+
+    except Exception as exc:
+        log.warning("Supabase company fetch failed: %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Main run
 # ---------------------------------------------------------------------------
 
@@ -597,6 +669,13 @@ def run() -> list[dict]:
 
     if DEBUG_SKIP_DATE_FILTER:
         print("  ⚠️  DEBUG_SKIP_DATE_FILTER=True — date filter is OFF")
+
+    on_windows = platform.system() == "Windows"
+    if on_windows:
+        log.info("Skipping Supabase company queries on Windows (SSL timeout risk)")
+        supabase_feeds = []
+    else:
+        supabase_feeds = get_supabase_company_feeds()
 
     feed_stats: dict[str, dict] = {}
     type_counts = {"site_rss": 0, "google_news": 0}
@@ -607,6 +686,8 @@ def run() -> list[dict]:
 
     TOTAL_TIMEOUT_SECS = 300  # 5 minutes hard cap across all feeds
     run_start = time.time()
+
+    supabase_stats: list[dict] = []  # separate tracking for Supabase company feeds
 
     for feed_type, feeds in [
         ("site_rss",    SITE_RSS_FEEDS),
@@ -643,6 +724,36 @@ def run() -> list[dict]:
 
             type_counts[feed_type] += len(kept)
             all_articles.extend(kept)
+
+    # Supabase company feeds — treated as google_news, capped at CAP_SUPABASE
+    SUPABASE_TIMEOUT_SECS = 60
+    supabase_start = time.time()
+    for url, label in supabase_feeds:
+        if time.time() - supabase_start > SUPABASE_TIMEOUT_SECS:
+            log.warning("Supabase feed section exceeded %ds — stopping early", SUPABASE_TIMEOUT_SECS)
+            break
+        if time.time() - run_start > TOTAL_TIMEOUT_SECS:
+            log.warning("Total fetch time exceeded %ds — stopping Supabase feeds early", TOTAL_TIMEOUT_SECS)
+            break
+
+        items, fstats = fetch_feed(url, label, failed_sources, feed_type="google_news")
+
+        grand_total_entries += fstats["total_entries"]
+        grand_date_dropped  += fstats["date_dropped"]
+        grand_unknown_date  += fstats["unknown_date"]
+
+        kept        = items[:CAP_SUPABASE]
+        cap_dropped = len(items) - len(kept)
+
+        type_counts["google_news"] += len(kept)
+        all_articles.extend(kept)
+
+        if fstats["kept"] > 0:  # only track companies that returned results
+            supabase_stats.append({
+                "label":   label.replace("Supabase: ", ""),
+                "fetched": fstats["kept"],
+                "kept":    len(kept),
+            })
 
     # Deduplicate by URL
     seen: set[str] = set()
@@ -715,6 +826,17 @@ def run() -> list[dict]:
         print(
             f"  {lbl:<46} {s['fetched']:>7} {s['cap_dropped']:>6} {s['kept']:>5}{marker}"
         )
+
+    if on_windows:
+        print(f"\n  Supabase queries: skipped (Windows)")
+    elif supabase_stats:
+        print(f"\n  --- Supabase company queries ({len(supabase_feeds)} companies, {len(supabase_stats)} with results) ---")
+        print(f"  {'Company':<35} {'fetched':>7} {'kept':>5}")
+        print(f"  {'-'*35} {'-'*7} {'-'*5}")
+        for s in sorted(supabase_stats, key=lambda x: -x["kept"]):
+            print(f"  {s['label'][:35]:<35} {s['fetched']:>7} {s['kept']:>5}")
+    elif supabase_feeds:
+        print(f"\n  Supabase: {len(supabase_feeds)} companies queried, 0 returned results")
 
     if failed_sources:
         print(f"\n  Failed feeds:")
