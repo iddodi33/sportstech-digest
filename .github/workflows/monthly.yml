@@ -2,7 +2,7 @@ name: Monthly SportsTech Digest
 
 on:
   schedule:
-    - cron: '0 9 1 * *'  # 9am UTC on the 1st of each month
+    - cron: '0 9 * * 1'  # 9am UTC every Monday (last-Monday check is in job steps)
   workflow_dispatch:      # allow manual trigger
 
 jobs:
@@ -18,7 +18,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check if last Monday of month
+        id: check_date
+        run: |
+          python - <<'EOF'
+          from datetime import datetime, timedelta
+          today = datetime.utcnow()
+          # Check if next Monday is in a different month
+          next_monday = today + timedelta(days=7)
+          is_last_monday = next_monday.month != today.month
+          print(f"Today: {today.date()}, Next Monday: {next_monday.date()}")
+          print(f"Is last Monday: {is_last_monday}")
+          if is_last_monday:
+              print("LAST_MONDAY=true")
+          else:
+              print("LAST_MONDAY=false")
+          with open("$GITHUB_OUTPUT", "a") as f:
+              f.write(f"is_last_monday={'true' if is_last_monday else 'false'}\n")
+          EOF
+
       - name: Run monthly pipeline
+        if: steps.check_date.outputs.is_last_monday == 'true'
         run: |
           python enhanced_sportstech_job_scraper_v3.py
           python news_pipeline.py
@@ -32,6 +52,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Commit research output
+        if: steps.check_date.outputs.is_last_monday == 'true'
         run: |
           git config --global user.email "monitor@sportsd3c0d3d.com"
           git config --global user.name "SportsTech Bot"
