@@ -2,7 +2,7 @@ name: Daily SportsTech Monitor
 
 on:
   schedule:
-    - cron: '0 9 * * 1-5'  # 9am UTC Monday-Friday
+    - cron: '0 9 * * *'  # 9am UTC every day
   workflow_dispatch:        # allow manual trigger
 
 jobs:
