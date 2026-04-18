@@ -3,12 +3,75 @@
 import logging
 import os
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 log = logging.getLogger(__name__)
+
+_PUBLISHER_MAP = {
+    "siliconrepublic.com":    "Silicon Republic",
+    "sportforbusiness.com":   "Sport for Business",
+    "businesspost.ie":        "Business Post",
+    "irishtimes.com":         "Irish Times",
+    "irishexaminer.com":      "Irish Examiner",
+    "independent.ie":         "Irish Independent",
+    "rte.ie":                 "RTÉ",
+    "thejournal.ie":          "The Journal",
+    "techcentral.ie":         "TechCentral",
+    "irishtechnews.ie":       "Irish Tech News",
+    "businessplus.ie":        "Business Plus",
+    "thinkbusiness.ie":       "Think Business",
+    "enterprise-ireland.com": "Enterprise Ireland",
+    "sportireland.ie":        "Sport Ireland",
+    "bebeez.eu":              "Bebeez",
+    "eu-startups.com":        "EU-Startups",
+    "sifted.eu":              "Sifted",
+    "techcrunch.com":         "TechCrunch",
+    "theathletic.com":        "The Athletic",
+    "espn.com":               "ESPN",
+    "reuters.com":            "Reuters",
+    "bloomberg.com":          "Bloomberg",
+    "forbes.com":             "Forbes",
+    "ft.com":                 "Financial Times",
+    "sportstechx.com":        "SportsTechX",
+    "sportspro.com":          "SportsPro",
+    "sbcnews.co.uk":          "SBC News",
+    "sustainhealth.fit":      "Sustain Health Magazine",
+    "mshale.com":             "Mshale",
+    "sportstourismnews.com":  "Sports Tourism News",
+}
+
+
+_MULTI_TLDS = [
+    ".co.uk", ".co.nz", ".com.au", ".co.ie",
+    ".co.za", ".org.uk", ".ac.uk", ".gov.uk",
+]
+
+
+def extract_publisher(url: str) -> str:
+    """Return a clean publisher name derived from the article URL domain."""
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return ""
+    host = host.lower().removeprefix("www.")
+    if host in _PUBLISHER_MAP:
+        return _PUBLISHER_MAP[host]
+    # Strip TLD to get the registrable stem
+    stem = host
+    for multi in _MULTI_TLDS:
+        if stem.endswith(multi):
+            stem = stem[: -len(multi)]
+            break
+    else:
+        # Single-segment TLD — drop the last dotted part
+        if "." in stem:
+            stem = stem.rsplit(".", 1)[0]
+    return stem.replace("-", " ").title()
+
 
 _client = None
 
@@ -45,7 +108,7 @@ def build_news_item(article: dict, scoring_result: dict | None = None) -> dict:
     return {
         "url":                 article.get("link", ""),
         "title":               article.get("title", ""),
-        "source":              article.get("source", ""),
+        "source":              extract_publisher(article.get("link", "")),
         "published_at":        published_at,
         "score":               int(sr.get("score", article.get("score", 0))),
         "score_reason":        sr.get("score_reason", article.get("reason", "")),
