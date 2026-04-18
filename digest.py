@@ -17,6 +17,7 @@ import base64
 import anthropic
 import pandas as pd
 from dotenv import load_dotenv
+from supabase_client import build_news_item, upsert_news_item
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import (
     Attachment, Disposition, FileContent, FileName, FileType, Mail,
@@ -148,8 +149,15 @@ def score_articles_with_claude(articles: list[dict]) -> list[dict]:
 1 = No sports angle, pure politics/property/crime/lifestyle, exact duplicate
 
 Return ONLY a JSON array, no other text, no markdown, no explanation.
-Each item: {{"idx": <number>, "score": <1-5>, "category": "<type>", "reason": "<5-8 words>", "summary": "<one sentence max 120 chars, prepend ⭐ if score 5>"}}
-Category must be one of: Funding | Product Launch | Company News | Industry Report | Partnership | Event | Other
+Each item must have ALL of these keys:
+  "idx": <number>
+  "score": <1-5>
+  "category": one of: Funding | Product Launch | Company News | Industry Report | Partnership | Event | Other
+  "score_reason": <5-8 words explaining the score>
+  "summary": <40-60 word editorial summary — factual, Irish-ecosystem-builder voice, short punchy phrasing, never starts with "Exciting news" or "Delighted", mentions company + what happened + why it matters, no hype. Prepend ⭐ if score is 5.>
+  "tags": <list of 3-5 keyword strings: company names, themes, event types>
+  "verticals": <list of 1-2 from: Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging>
+  "mentioned_companies": <list of company names actually mentioned in the article>
 
 ARTICLES:
 {articles_text}
@@ -158,7 +166,7 @@ JSON array:"""
         try:
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=2000,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
@@ -183,10 +191,13 @@ JSON array:"""
                 idx = scored_item.get("idx", -1)
                 if 0 <= idx < len(batch):
                     article = batch[idx].copy()
-                    article["score"]    = scored_item.get("score",    1)
-                    article["category"] = scored_item.get("category", "Other")
-                    article["reason"]   = scored_item.get("reason",   "")
-                    article["summary"]  = scored_item.get("summary",  "")
+                    article["score"]               = scored_item.get("score",    1)
+                    article["category"]            = scored_item.get("category", "Other")
+                    article["reason"]              = scored_item.get("score_reason", scored_item.get("reason", ""))
+                    article["summary"]             = scored_item.get("summary",  "")
+                    article["tags"]                = scored_item.get("tags",     [])
+                    article["verticals"]           = scored_item.get("verticals", [])
+                    article["mentioned_companies"] = scored_item.get("mentioned_companies", [])
                     all_scored.append(article)
 
         except Exception as exc:
@@ -502,10 +513,22 @@ def run():
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(md)
 
+    # Upsert score 3+ articles to Supabase hub (additive; does not affect email)
+    hub_articles = [a for a in scored if int(a.get("score", 0)) >= 3]
+    hub_upsert_count = 0
+    for article in hub_articles:
+        item = build_news_item(article)
+        if upsert_news_item(item) is not None:
+            hub_upsert_count += 1
+        else:
+            log.warning("Supabase upsert failed for: %s", article.get("title", "")[:80])
+    log.info("Supabase: upserted %d/%d score-3+ items to hub", hub_upsert_count, len(hub_articles))
+
     print(f"\n=== Digest Summary ===")
     print(f"  Articles scored   : {len(scored)}")
     print(f"  Jobs included     : {len(jobs_df) if jobs_df is not None else 0}")
     print(f"  Output            : {output_path}")
+    print(f"  Supabase upserted : {hub_upsert_count}/{len(hub_articles)} (score 3+)")
 
     email_research_digest(output_path, month)
 

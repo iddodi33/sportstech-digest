@@ -25,6 +25,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 from news_pipeline import GOOGLE_NEWS_FEEDS
+from supabase_client import build_news_item, upsert_news_item
 
 load_dotenv()
 
@@ -324,8 +325,15 @@ def score_articles(articles: list[dict]) -> list[dict]:
 1 = No sports angle, pure politics/property/crime/lifestyle, exact duplicate
 
 Return ONLY a JSON array, no other text, no markdown, no explanation.
-Each item: {{"idx": <number>, "score": <1-5>, "category": "<type>", "reason": "<5-8 words>", "summary": "<one sentence max 120 chars>"}}
-Category must be one of: Funding | Product Launch | Company News | Industry Report | Partnership | Event | Other
+Each item must have ALL of these keys:
+  "idx": <number>
+  "score": <1-5>
+  "category": one of: Funding | Product Launch | Company News | Industry Report | Partnership | Event | Other
+  "score_reason": <5-8 words explaining the score>
+  "summary": <40-60 word editorial summary — factual, Irish-ecosystem-builder voice, short punchy phrasing, never starts with "Exciting news" or "Delighted", mentions company + what happened + why it matters, no hype>
+  "tags": <list of 3-5 keyword strings: company names, themes, event types>
+  "verticals": <list of 1-2 from: Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging>
+  "mentioned_companies": <list of company names actually mentioned in the article>
 
 ARTICLES:
 {articles_text}
@@ -335,7 +343,7 @@ JSON array:"""
             response = _call_claude_with_retry(
                 client,
                 model=MODEL,
-                max_tokens=2000,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
@@ -360,10 +368,13 @@ JSON array:"""
                 idx = item.get("idx", -1)
                 if 0 <= idx < len(batch):
                     article = batch[idx].copy()
-                    article["score"]    = item.get("score",    1)
-                    article["category"] = item.get("category", "Other")
-                    article["reason"]   = item.get("reason",   "")
-                    article["summary"]  = item.get("summary",  "")
+                    article["score"]               = item.get("score",    1)
+                    article["category"]            = item.get("category", "Other")
+                    article["reason"]              = item.get("score_reason", item.get("reason", ""))
+                    article["summary"]             = item.get("summary",  "")
+                    article["tags"]                = item.get("tags",     [])
+                    article["verticals"]           = item.get("verticals", [])
+                    article["mentioned_companies"] = item.get("mentioned_companies", [])
                     all_scored.append(article)
 
         except Exception as exc:
@@ -653,6 +664,17 @@ def run():
     dedup_removed = before_dedup - len(new_articles)
     log.info("After story dedup: %d articles (%d duplicate(s) removed)", len(new_articles), dedup_removed)
 
+    # 3c. Upsert score 3+ articles to Supabase hub
+    hub_upsert_count = 0
+    for article in new_articles:
+        item = build_news_item(article)
+        if upsert_news_item(item) is not None:
+            hub_upsert_count += 1
+            log.info("Supabase upsert OK: [Score %s] %s", article.get("score"), article.get("title", "")[:80])
+        else:
+            log.warning("Supabase upsert failed: %s", article.get("title", "")[:80])
+    log.info("Supabase: upserted %d/%d items to hub", hub_upsert_count, len(new_articles))
+
     # 4. Generate posts + send emails
     sent_count = 0
     for article in new_articles:
@@ -684,6 +706,7 @@ def run():
     print(f"Scored {MIN_SCORE}+: {len(high)}")
     print(f"Already seen (skipped): {already_seen_n}")
     print(f"After story dedup: {len(new_articles)} (removed {dedup_removed} duplicate(s))")
+    print(f"Supabase upserted: {hub_upsert_count}/{len(new_articles)}")
     print(f"Emails sent: {sent_count}")
     if unsent:
         print(f"Failed (saved to unsent file): {len(unsent)}")

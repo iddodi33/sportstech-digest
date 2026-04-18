@@ -7,3 +7,4 @@ python-dotenv
 cloudscraper
 lxml
 sendgrid
+supabase==2.*
