@@ -234,6 +234,25 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text or "").strip()
 
 
+def _decode_google_news_url(url: str) -> str:
+    """Resolve a news.google.com/rss/articles/CBMi... redirect to the real article URL.
+
+    Returns the decoded URL on success, the original URL on any failure.
+    """
+    if "news.google.com" not in url:
+        return url
+    try:
+        from googlenewsdecoder import gnewsdecoder
+        result = gnewsdecoder(url)
+        decoded = result.get("decoded_url", "") if isinstance(result, dict) else ""
+        if decoded and decoded.startswith("http") and "news.google.com" not in decoded:
+            return decoded
+        log.warning("googlenewsdecoder returned unexpected result for %s: %s", url[:80], result)
+    except Exception as exc:
+        log.warning("googlenewsdecoder failed for %s: %s", url[:80], exc)
+    return url
+
+
 def _domain(url: str) -> str:
     match = re.search(r"https?://(?:www\.)?([^/]+)", url)
     return match.group(1) if match else url
@@ -693,6 +712,8 @@ def fetch_feed(
             link = entry.get("link", "")
             if not link:
                 continue
+            if feed_type == "google_news":
+                link = _decode_google_news_url(link)
 
             title = _strip_html(entry.get("title", ""))
 

@@ -3,8 +3,10 @@
 import logging
 import os
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -73,6 +75,50 @@ def extract_publisher(url: str) -> str:
     return stem.replace("-", " ").title()
 
 
+_OG_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
+
+
+def fetch_og_metadata(url: str) -> dict:
+    """Fetch og:image and og:title from an article page.
+
+    Returns {"image_url": str|None, "og_title": str|None}.
+    Never raises — all errors are logged and return None values.
+    """
+    empty = {"image_url": None, "og_title": None}
+    if not url or url.startswith("https://www.google.com/search"):
+        return empty
+    try:
+        resp = requests.get(url, headers=_OG_HEADERS, timeout=10)
+        resp.raise_for_status()
+    except Exception as exc:
+        log.warning("fetch_og_metadata: request failed for %s — %s", url[:80], exc)
+        return empty
+    try:
+        soup = BeautifulSoup(resp.content, "html.parser")
+
+        def _meta(prop_attr, prop_val):
+            tag = soup.find("meta", attrs={prop_attr: prop_val})
+            return (tag.get("content") or "").strip() if tag else ""
+
+        image_url = _meta("property", "og:image") or _meta("name", "twitter:image") or None
+        og_title  = _meta("property", "og:title") or None
+
+        # Resolve relative image URLs
+        if image_url and not image_url.startswith("http"):
+            image_url = urljoin(url, image_url)
+
+        return {"image_url": image_url, "og_title": og_title}
+    except Exception as exc:
+        log.warning("fetch_og_metadata: parse failed for %s — %s", url[:80], exc)
+        return empty
+
+
 _client = None
 
 
@@ -102,13 +148,27 @@ def build_news_item(article: dict, scoring_result: dict | None = None) -> dict:
 
     If scoring_result is None the fields are read from article directly
     (useful when scoring fields have already been merged in).
+    Fetches OG metadata from the article page to populate image_url and
+    optionally override the RSS title with a cleaner og:title.
     """
     sr = scoring_result or article
+    url          = article.get("link", "")
+    rss_title    = article.get("title", "")
     published_at = article.get("pubDate") or datetime.now(timezone.utc).isoformat()
+
+    og = fetch_og_metadata(url)
+    og_title = og["og_title"]
+    title = (
+        og_title
+        if og_title and og_title != rss_title and len(og_title) >= 15
+        else rss_title
+    )
+
     return {
-        "url":                 article.get("link", ""),
-        "title":               article.get("title", ""),
-        "source":              extract_publisher(article.get("link", "")),
+        "url":                 url,
+        "title":               title,
+        "original_title":      rss_title,
+        "source":              extract_publisher(url),
         "published_at":        published_at,
         "score":               int(sr.get("score", article.get("score", 0))),
         "score_reason":        sr.get("score_reason", article.get("reason", "")),
@@ -116,6 +176,7 @@ def build_news_item(article: dict, scoring_result: dict | None = None) -> dict:
         "tags":                sr.get("tags", article.get("tags", [])) or [],
         "verticals":           sr.get("verticals", article.get("verticals", [])) or [],
         "mentioned_companies": sr.get("mentioned_companies", article.get("mentioned_companies", [])) or [],
+        "image_url":           og["image_url"],
         "status":              "pending",
     }
 
@@ -151,6 +212,8 @@ def upsert_news_item(item: dict) -> dict | None:
                 "p_tags":                item["tags"],
                 "p_verticals":           item["verticals"],
                 "p_mentioned_companies": item["mentioned_companies"],
+                "p_image_url":           item.get("image_url"),
+                "p_original_title":      item.get("original_title"),
             },
         ).execute()
         return result.data

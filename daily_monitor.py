@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
-from news_pipeline import GOOGLE_NEWS_FEEDS
+from news_pipeline import GOOGLE_NEWS_FEEDS, _decode_google_news_url
 from supabase_client import build_news_item, upsert_news_item
 
 load_dotenv()
@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 MODEL        = "claude-sonnet-4-5-20250929"
-LOOKBACK_HOURS = 720
+LOOKBACK_HOURS = 72
 MIN_SCORE    = 3
 BATCH_SIZE   = 15
 SEEN_FILE    = "daily_monitor_seen.json"
@@ -69,31 +69,38 @@ def _is_google_url(url: str) -> bool:
     return "google.com" in url or "news.google.com" in url
 
 
-def _extract_real_url(entry, title: str) -> tuple[str, bool]:
+def _extract_real_url(entry, title: str, decode: bool = False) -> tuple[str, bool]:
     """
-    Extract the real article URL from a feedparser entry without HTTP requests.
+    Extract the real article URL from a feedparser entry.
     Returns (url, is_fallback) where is_fallback=True means a search URL was used.
 
     Try order:
-      1. entry.source.href if non-Google
-      2. Non-Google href in entry.links
-      3. Non-Google <a href> in entry.summary HTML
-      4. Google search URL as fallback
-    """
-    # 1. source href
-    source_href = ""
-    if hasattr(entry, "source") and isinstance(entry.source, dict):
-        source_href = entry.source.get("href", "")
-    if source_href and not _is_google_url(source_href):
-        return source_href, False
+      0. Decode Google News CBMi... redirect (only when decode=True — HTTP request)
+      1. Non-Google href in entry.links
+      2. Non-Google <a href> in entry.summary HTML
+      3. Google search URL as fallback
 
-    # 2. links list
+    decode=True only for within-window articles to avoid making hundreds of
+    HTTP requests for entries we won't score.
+
+    Note: entry.source.href is intentionally NOT used — for Google News RSS it
+    is the publisher's homepage label, not the article URL.
+    """
+    # 0. Decode Google News CBMi... redirect to the real article URL
+    if decode:
+        raw_link = getattr(entry, "link", "") or ""
+        if raw_link and _is_google_url(raw_link):
+            decoded = _decode_google_news_url(raw_link)
+            if not _is_google_url(decoded):
+                return decoded, False
+
+    # 1. links list (catches non-GNews sources with a real <link> element)
     for lnk in getattr(entry, "links", []):
         href = lnk.get("href", "")
         if href and not _is_google_url(href):
             return href, False
 
-    # 3. summary HTML
+    # 2. summary HTML
     summary_html = getattr(entry, "summary", "") or ""
     if summary_html:
         try:
@@ -105,7 +112,7 @@ def _extract_real_url(entry, title: str) -> tuple[str, bool]:
         except Exception:
             pass
 
-    # 4. Fallback: Google search link for the title
+    # 3. Fallback: Google search link for the title
     fallback = f"https://www.google.com/search?q={urllib.parse.quote(title)}"
     return fallback, True
 
@@ -252,10 +259,13 @@ def fetch_recent_articles(hours: int = LOOKBACK_HOURS) -> tuple[list[dict], int]
                     )
                     date_check_count += 1
 
-                real_link, is_fallback = _extract_real_url(entry, title)
-                if real_link in seen_links:
+                # Only decode Google redirects for within-window articles;
+                # out-of-window entries are counted but never scored.
+                real_link, is_fallback = _extract_real_url(entry, title, decode=within)
+                dedup_key = real_link
+                if dedup_key in seen_links:
                     continue
-                seen_links.add(real_link)
+                seen_links.add(dedup_key)
 
                 pub_iso = pub_dt.isoformat() if pub_dt else ""
                 article = {
