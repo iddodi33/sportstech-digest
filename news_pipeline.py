@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
+import cloudscraper
 import feedparser
 import requests
 from bs4 import BeautifulSoup
@@ -45,9 +46,7 @@ HIGH_QUALITY_SOURCES = {
     "sportforbusiness.com",
     "siliconrepublic.com",
     "thinkbusiness.ie",
-    "businesspost.ie",
     "bebeez.eu",
-    "enterprise-ireland.com",
 }
 MEDIUM_QUALITY_SOURCES = {
     "businessplus.ie",
@@ -80,11 +79,12 @@ _BROADSHEET_KEYWORDS = {
     "ai", "innovation", "ireland",
 }
 
-CAP_HIGH        = 15
-CAP_BROADSHEET  = 5   # strict cap for high-volume broadsheets
-CAP_MEDIUM      = 5
-CAP_LOW         = 3
-CAP_GOOGLE_NEWS = 10
+CAP_HIGH           = 15
+CAP_BUSINESSPOST   = 10  # cloudscraper direct scrape
+CAP_BROADSHEET     = 5   # strict cap for high-volume broadsheets
+CAP_MEDIUM         = 5
+CAP_LOW            = 3
+CAP_GOOGLE_NEWS    = 10
 # -------------------------------------------------------------------------
 
 SITE_RSS_FEEDS = [
@@ -94,13 +94,16 @@ SITE_RSS_FEEDS = [
     "https://www.thinkbusiness.ie/feed/",
     "https://businessplus.ie/feed/",
     "https://www.techcentral.ie/feed/",
-    "https://irishtechnews.ie/feed/",
+    "http://feeds.feedburner.com/IrishTechNews",  # irishtechnews.ie official Feedburner feed
     "https://bebeez.eu/feed/",
-    "https://www.businesspost.ie/feed/",
     # RSS attempted first, scraped on failure (see SCRAPE_FALLBACK)
-    "https://www.enterprise-ireland.com/rss/news.xml",
     "https://www.sportireland.ie/rss",
 ]
+
+# Maps specific feed URLs to their logical source name (used for labelling and cap lookup)
+_FEED_URL_SOURCE = {
+    "http://feeds.feedburner.com/IrishTechNews": "irishtechnews.ie",
+}
 
 GOOGLE_NEWS_FEEDS = [
     # Ireland-specific
@@ -135,16 +138,26 @@ GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=teamfeepay+ireland&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=clubspot+ireland&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=revelate+fitness+ireland&hl=en-IE&gl=IE&ceid=IE:en",
-    # Ecosystem people
-    "https://news.google.com/rss/search?q=%22Keith+Brock%22+%22Enterprise+Ireland%22&hl=en-IE&gl=IE&ceid=IE:en",
+    # Ecosystem people (broader queries — no forced co-occurrence, no "linkedin" keyword)
+    "https://news.google.com/rss/search?q=%22Keith+Brock%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Keith+Brock%22+%22Enterprise+Ireland%22+sport&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Rob+Hartnett%22+sport&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Aimee+Williams%22+IDA+Ireland&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Aim%C3%A9e+Williams%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Aimee+Williams%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Trev+Keane%22+Feenix&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Colin+Deering%22+Anyscor&hl=en-IE&gl=IE&ceid=IE:en",
-    # LinkedIn post monitoring via Google News
-    "https://news.google.com/rss/search?q=%22Keith+Brock%22+sportstech+linkedin&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Rob+Hartnett%22+sport+linkedin&hl=en-IE&gl=IE&ceid=IE:en",
-    "https://news.google.com/rss/search?q=%22Aimee+Williams%22+IDA+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=%22Colin+Deering%22+sport&hl=en-IE&gl=IE&ceid=IE:en",
+    # Named entity queries (more specific — surface articles that single-name queries miss)
+    "https://news.google.com/rss/search?q=Kitman+Labs+funding&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=STATSports+%22Northern+Ireland%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Orreco+%22sports+science%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Clubforce+Ireland+sport&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Leinster+Rugby+%22data+analytics%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=IRFU+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=FAI+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=GAA+analytics+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Munster+Rugby+data&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Connacht+Rugby+analytics&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Ulster+Rugby+technology&hl=en-IE&gl=IE&ceid=IE:en",
     # Europe sportstech
     "https://news.google.com/rss/search?q=sportstech+europe+startup&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=sports+technology+funding+europe&hl=en-IE&gl=IE&ceid=IE:en",
@@ -153,14 +166,16 @@ GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=%22Irish+Independent%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Irish+Examiner%22+sport+tech&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Business+Post%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    # Business Post site: queries — redundant coverage via Google News index
+    "https://news.google.com/rss/search?q=site%3Abusinesspost.ie+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=site%3Abusinesspost.ie+sport+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=site%3Abusinesspost.ie+%22sports+tech%22+Ireland&hl=en-IE&gl=IE&ceid=IE:en",
 ]
 
 # Domains whose RSS is malformed or absent — scraped as fallback when RSS yields 0 entries.
 SCRAPE_FALLBACK = {
-    "thinkbusiness.ie":       "https://www.thinkbusiness.ie",
-    "businesspost.ie":        "https://www.businesspost.ie/tech/",
-    "enterprise-ireland.com": "https://www.enterprise-ireland.com/en/news/",
-    "sportireland.ie":        "https://www.sportireland.ie/news",
+    "thinkbusiness.ie": "https://www.thinkbusiness.ie",
+    "sportireland.ie":  "https://www.sportireland.ie/news",
 }
 
 _HEADERS = {
@@ -228,7 +243,7 @@ def _cap_for(url: str, feed_type: str) -> int:
     """Return the article cap for a given feed URL and type."""
     if feed_type == "google_news":
         return CAP_GOOGLE_NEWS
-    domain = _domain(url)
+    domain = _FEED_URL_SOURCE.get(url, _domain(url))
     if domain in BROADSHEET_SOURCES:
         return CAP_BROADSHEET
     if domain in HIGH_QUALITY_SOURCES:
@@ -241,6 +256,8 @@ def _cap_for(url: str, feed_type: str) -> int:
 
 
 def label_for(url: str, feed_type: str) -> str:
+    if url in _FEED_URL_SOURCE:
+        return _FEED_URL_SOURCE[url]
     if feed_type == "google_news":
         match = re.search(r"[?&]q=([^&]+)", url)
         return f"GNews: {match.group(1).replace('+', ' ')}" if match else "Google News"
@@ -437,6 +454,176 @@ def _scrape_articles(url: str, source_label: str, failed_sources: list) -> tuple
     }
     log.info("Scraped %s: %d containers → %d kept", source_label, len(containers), len(articles))
     return articles, stats
+
+
+# ---------------------------------------------------------------------------
+# Enterprise Ireland direct scraper
+# ---------------------------------------------------------------------------
+
+def _scrape_enterprise_ireland(failed_sources: list) -> list[dict]:
+    """
+    Custom scraper for enterprise-ireland.com/en/news.
+    Their news listing uses <a href="/en/news/<slug>"> links with <h4> titles,
+    date blocks formatted as "16th April 2026", and short description paragraphs.
+    """
+    base_url = "https://www.enterprise-ireland.com"
+    url = f"{base_url}/en/news"
+    source_label = "enterprise-ireland.com"
+
+    try:
+        resp = requests.get(url, timeout=10, headers=_HEADERS)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+    except Exception as exc:
+        log.warning("SCRAPE FAILED %s (%s): %s", source_label, url, exc)
+        failed_sources.append({"source": source_label, "url": url, "error": f"scrape: {exc}"})
+        return []
+
+    articles = []
+    seen_links: set[str] = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if "javascript:void" in href:
+            continue
+        if "/en/news/" not in href:
+            continue
+        if href.startswith("/"):
+            href = base_url + href
+        if href in seen_links:
+            continue
+        seen_links.add(href)
+
+        # Walk up to find the containing card
+        card = a.find_parent(["div", "li", "article", "section"])
+
+        # Title: prefer h4 inside the card, fall back to the anchor text
+        title = ""
+        if card:
+            h4 = card.find("h4")
+            title = h4.get_text(strip=True) if h4 else a.get_text(strip=True)
+        else:
+            title = a.get_text(strip=True)
+        title = title.strip()
+        if not title or len(title) < 5:
+            continue
+
+        # Date: look for "16th April 2026" style text in the card
+        pub_dt = None
+        if card:
+            for el in card.find_all(string=True):
+                text = el.strip()
+                m = re.search(r'(\d{1,2})(?:st|nd|rd|th)\s+(\w+)\s+(\d{4})', text, re.I)
+                if m:
+                    try:
+                        pub_dt = datetime.strptime(
+                            f"{m.group(1)} {m.group(2)} {m.group(3)}", "%d %B %Y"
+                        ).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+                    break
+
+        if pub_dt is not None and not _within_cutoff(pub_dt, "site_rss"):
+            continue
+
+        # Snippet: first <p> in the card
+        snippet = ""
+        if card:
+            p = card.find("p")
+            if p:
+                snippet = p.get_text(strip=True)[:300]
+
+        articles.append({
+            "title":   title,
+            "link":    href,
+            "pubDate": pub_dt.isoformat() if pub_dt else "Unknown",
+            "source":  source_label,
+            "snippet": snippet,
+        })
+
+    log.info("Enterprise Ireland scrape: %d articles from %d unique links", len(articles), len(seen_links))
+    return articles
+
+
+# ---------------------------------------------------------------------------
+# Business Post scraper (cloudscraper — bypasses Cloudflare bot protection)
+# ---------------------------------------------------------------------------
+
+def _scrape_businesspost(failed_sources: list) -> list[dict]:
+    """
+    Scrape https://www.businesspost.ie/tech/ using cloudscraper to bypass
+    Cloudflare bot protection. Plain requests and feedparser both return 403.
+    """
+    url          = "https://www.businesspost.ie/tech/"
+    source_label = "businesspost.ie"
+
+    try:
+        scraper  = cloudscraper.create_scraper()
+        resp     = scraper.get(url, timeout=20)
+        resp.raise_for_status()
+        soup     = BeautifulSoup(resp.text, "lxml")
+    except Exception as exc:
+        log.warning("SCRAPE FAILED %s via cloudscraper (%s): %s", source_label, url, exc)
+        failed_sources.append({"source": source_label, "url": url, "error": f"cloudscraper: {exc}"})
+        return []
+
+    articles   = []
+    seen_links: set[str] = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href:
+            continue
+        # Only article paths — /news/ or /tech/ slugs, not nav/section links
+        if not re.search(r"/(?:news|tech)/[^/]{5,}", href):
+            continue
+        if not href.startswith("http"):
+            href = "https://www.businesspost.ie" + href
+        if href in seen_links:
+            continue
+        seen_links.add(href)
+
+        card  = a.find_parent(["article", "div", "li", "section"])
+        title = ""
+        if card:
+            for heading in card.find_all(["h2", "h3", "h4"]):
+                title = heading.get_text(strip=True)
+                if title:
+                    break
+        if not title:
+            title = a.get_text(strip=True)
+        title = title.strip()
+        if not title or len(title) < 10:
+            continue
+
+        # Date
+        pub_dt = None
+        if card:
+            time_el = card.find("time")
+            if time_el:
+                pub_dt = _parse_date_str(
+                    time_el.get("datetime", "") or time_el.get_text(strip=True)
+                )
+
+        if pub_dt is not None and not _within_cutoff(pub_dt, "site_rss"):
+            continue
+
+        snippet = ""
+        if card:
+            p = card.find("p")
+            if p:
+                snippet = p.get_text(strip=True)[:300]
+
+        articles.append({
+            "title":   title,
+            "link":    href,
+            "pubDate": pub_dt.isoformat() if pub_dt else "Unknown",
+            "source":  source_label,
+            "snippet": snippet,
+        })
+
+    log.info("Business Post cloudscraper: %d articles from %s", len(articles), url)
+    return articles
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +911,42 @@ def run() -> list[dict]:
 
             type_counts[feed_type] += len(kept)
             all_articles.extend(kept)
+
+    # Enterprise Ireland direct scrape (no RSS — custom parser for /en/news listing)
+    ei_articles = _scrape_enterprise_ireland(failed_sources)
+    ei_kept = ei_articles[:CAP_HIGH]
+    ei_url = "https://www.enterprise-ireland.com/en/news"
+    feed_stats[ei_url] = {
+        "label":       "enterprise-ireland.com",
+        "feed_type":   "site_rss",
+        "cap":         CAP_HIGH,
+        "method":      "scrape",
+        "fetched":     len(ei_articles),
+        "cap_dropped": len(ei_articles) - len(ei_kept),
+        "kept":        len(ei_kept),
+        "oldest_date": _date_range(ei_kept)[0],
+        "newest_date": _date_range(ei_kept)[1],
+    }
+    type_counts["site_rss"] += len(ei_kept)
+    all_articles.extend(ei_kept)
+
+    # Business Post cloudscraper (bypasses Cloudflare; feedparser + plain requests = 403)
+    bp_articles = _scrape_businesspost(failed_sources)
+    bp_kept = bp_articles[:CAP_BUSINESSPOST]
+    bp_url = "https://www.businesspost.ie/tech/"
+    feed_stats[bp_url] = {
+        "label":       "businesspost.ie",
+        "feed_type":   "site_rss",
+        "cap":         CAP_BUSINESSPOST,
+        "method":      "cloudscraper",
+        "fetched":     len(bp_articles),
+        "cap_dropped": len(bp_articles) - len(bp_kept),
+        "kept":        len(bp_kept),
+        "oldest_date": _date_range(bp_kept)[0],
+        "newest_date": _date_range(bp_kept)[1],
+    }
+    type_counts["site_rss"] += len(bp_kept)
+    all_articles.extend(bp_kept)
 
     # Supabase company feeds — treated as google_news, capped at CAP_SUPABASE
     SUPABASE_TIMEOUT_SECS = 60

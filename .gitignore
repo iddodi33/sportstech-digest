@@ -1,9 +1,13 @@
 .env
 *.csv
 *.json
+!sportstech_jobs_ireland.csv
+!news_raw_*.json
+!daily_monitor_seen.json
 *.log
 logs/
 __pycache__/
 *.pyc
 research/
+!research/*.md
 .venv/

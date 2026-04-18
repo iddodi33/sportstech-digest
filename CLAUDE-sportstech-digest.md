@@ -42,7 +42,7 @@ sportstech-digest/
 - **Python 3.10+** on Windows (local) / Ubuntu (GitHub Actions)
 - **feedparser** — RSS fetching
 - **requests + BeautifulSoup** — scraping
-- **anthropic** — Claude API (model: claude-sonnet-4-20250514)
+- **anthropic** — Claude API (model: claude-sonnet-4-5-20250929)
 - **sendgrid** — email delivery
 - **pandas** — job CSV output
 - **GitHub Actions** — scheduling
@@ -71,7 +71,11 @@ Ireland-specific: sportstech ireland, sports technology ireland, sports startup 
 
 Named Irish companies: kitman labs, output sports, orreco ireland, statsports, tixserve, enterprise ireland sports, sport ireland technology, wiistream ireland, clubforce ireland, trojantrack, sports impact technologies ireland, feenix group ireland, anyscor ireland, locker app ireland sports, precision sports technology ireland, headhawk ireland, teamfeepay ireland, clubspot ireland, revelate fitness ireland
 
-Ecosystem people (LinkedIn posts indexed by Google): "Keith Brock" sportstech site:linkedin.com, "Rob Hartnett" site:linkedin.com, "Aimee Williams" site:linkedin.com, "Trev Keane" Feenix, "Colin Deering" Anyscor
+Named entity queries (multi-word, surface articles single-name queries miss): Kitman Labs funding, STATSports "Northern Ireland", Orreco "sports science", Clubforce Ireland sport, Leinster Rugby "data analytics", IRFU technology, FAI technology, GAA analytics technology, Munster Rugby data, Connacht Rugby analytics, Ulster Rugby technology
+
+Ecosystem people (broader queries, no "linkedin" keyword on non-site queries): "Keith Brock" sportstech, "Keith Brock" "Enterprise Ireland" sport, "Rob Hartnett" sport, "Aimée Williams" sportstech, "Aimee Williams" sportstech, "Trev Keane" Feenix, "Colin Deering" sport
+
+Business Post site: queries (redundant coverage via Google News index): site:businesspost.ie sportstech, site:businesspost.ie sport technology, site:businesspost.ie "sports tech" Ireland
 
 Europe: sportstech europe startup, sports technology funding europe
 
@@ -81,10 +85,10 @@ Europe: sportstech europe startup, sports technology funding europe
 - thinkbusiness.ie (scrape fallback — RSS broken)
 - businessplus.ie (cap: 5)
 - techcentral.ie (cap: 5)
-- irishtechnews.ie (cap: 3)
+- irishtechnews.ie (cap: 3, fetched via Feedburner: feeds.feedburner.com/IrishTechNews)
 - bebeez.eu (cap: 15, Ireland/UK filter)
-- businesspost.ie (403 blocked)
-- enterprise-ireland.com (scrape fallback)
+- businesspost.ie (cap: 10, cloudscraper direct scrape of /tech/ — bypasses Cloudflare)
+- enterprise-ireland.com (custom HTML scrape of /en/news — no RSS)
 - sportireland.ie (scrape fallback)
 
 ---
@@ -205,7 +209,6 @@ Iddo's voice — key rules:
 ## Known Issues / Outstanding Items
 
 - **Adzuna API 404** — URL format needs fixing, low priority as LinkedIn gives good coverage
-- **businesspost.ie** — returns 403, scraping blocked
 - **thinkbusiness.ie RSS** — malformed XML, scrape fallback works
 - **"Work at Web Summit"** placeholder job — add to title exclusion list
 - **WHOOP Remote roles** — "North American" in title should be excluded even if location says "Remote"
@@ -271,7 +274,7 @@ python daily_monitor.py
 
 - Always wrap external calls in try/except — never crash the pipeline because one source fails
 - Batch Claude API calls at 15 articles max per call to avoid JSON truncation
-- Use model `claude-sonnet-4-20250514` throughout
+- Use model `claude-sonnet-4-5-20250929` throughout
 - Load env vars with python-dotenv at top of each file
 - Log failures to file, don't just print
 - Test locally before pushing — GitHub Actions runs are hard to debug

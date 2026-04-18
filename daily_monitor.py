@@ -31,11 +31,25 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-MODEL        = "claude-sonnet-4-20250514"
-LOOKBACK_HOURS = 25
-MIN_SCORE    = 4
+MODEL        = "claude-sonnet-4-5-20250929"
+LOOKBACK_HOURS = 72
+MIN_SCORE    = 3
 BATCH_SIZE   = 15
 SEEN_FILE    = "daily_monitor_seen.json"
+
+
+def _call_claude_with_retry(client, **kwargs):
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            return client.messages.create(**kwargs)
+        except (anthropic.APIConnectionError, anthropic.APIStatusError, anthropic.InternalServerError) as exc:
+            if attempt == max_attempts - 1:
+                raise
+            wait = 2 ** (attempt + 1)
+            log.warning("Claude API error (attempt %d/%d): %s — retrying in %ds", attempt + 1, max_attempts, exc, wait)
+            time.sleep(wait)
+
 
 _HEADERS = {
     "User-Agent": (
@@ -318,7 +332,8 @@ ARTICLES:
 JSON array:"""
 
         try:
-            response = client.messages.create(
+            response = _call_claude_with_retry(
+                client,
                 model=MODEL,
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}],
@@ -423,7 +438,8 @@ def generate_linkedin_post(article: dict) -> str:
     )
 
     try:
-        response = client.messages.create(
+        response = _call_claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=600,
             system=LINKEDIN_SYSTEM,
@@ -501,7 +517,11 @@ Article scored {score}/5 for Irish sportstech relevance.
 
     try:
         sg = SendGridAPIClient(sg_key)
-        sg.send(message)
+        response = sg.send(message)
+        log.info("SendGrid response: status=%s for '%s'", response.status_code, title[:60])
+        if response.status_code >= 400:
+            log.error("SendGrid returned error status %s: %s", response.status_code, response.body)
+            return False
         return True
     except Exception as exc:
         log.error("SendGrid send failed for '%s': %s", title, exc)
@@ -543,7 +563,8 @@ Articles:
 JSON array of groups:"""
 
     try:
-        response = client.messages.create(
+        response = _call_claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],

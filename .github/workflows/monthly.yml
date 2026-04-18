@@ -2,8 +2,11 @@ name: Monthly SportsTech Digest
 
 on:
   schedule:
-    - cron: '0 9 * * 1'  # 9am UTC every Monday (last-Monday check is in job steps)
+    - cron: '0 9 1 * *'  # 9am UTC on the 1st of each month
   workflow_dispatch:      # allow manual trigger
+
+permissions:
+  contents: write
 
 jobs:
   digest:
@@ -18,27 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check if last Monday of month
-        id: check_date
-        run: |
-          python - <<'EOF'
-          from datetime import datetime, timedelta
-          today = datetime.utcnow()
-          # Check if next Monday is in a different month
-          next_monday = today + timedelta(days=7)
-          is_last_monday = next_monday.month != today.month
-          print(f"Today: {today.date()}, Next Monday: {next_monday.date()}")
-          print(f"Is last Monday: {is_last_monday}")
-          if is_last_monday:
-              print("LAST_MONDAY=true")
-          else:
-              print("LAST_MONDAY=false")
-          with open("$GITHUB_OUTPUT", "a") as f:
-              f.write(f"is_last_monday={'true' if is_last_monday else 'false'}\n")
-          EOF
-
       - name: Run monthly pipeline
-        if: steps.check_date.outputs.is_last_monday == 'true'
         run: |
           python enhanced_sportstech_job_scraper_v3.py
           python news_pipeline.py
@@ -50,12 +33,15 @@ jobs:
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALERT_FROM: monitor@sportsd3c0d3d.ie
+          ALERT_TO: iddodiamant@gmail.com
 
       - name: Commit research output
-        if: steps.check_date.outputs.is_last_monday == 'true'
         run: |
-          git config --global user.email "monitor@sportsd3c0d3d.com"
-          git config --global user.name "SportsTech Bot"
-          git add research/
-          git diff --staged --quiet || git commit -m "Monthly digest $(date +%Y-%m)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add research/ sportstech_jobs_ireland.csv news_raw_*.json || true
+          git diff --staged --quiet || git commit -m "Monthly digest: $(date +%Y-%m)"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -12,16 +12,22 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+import base64
+
 import anthropic
 import pandas as pd
 from dotenv import load_dotenv
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import (
+    Attachment, Disposition, FileContent, FileName, FileType, Mail,
+)
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-5-20250929"
 TOP_N_ARTICLES = 20
 TOP_N_JOBS = 30
 
@@ -423,6 +429,50 @@ def build_markdown(
     return "\n".join(lines)
 
 
+def email_research_digest(output_path: str, month: str) -> None:
+    sg_key     = os.getenv("SENDGRID_API_KEY")
+    alert_from = os.getenv("ALERT_FROM")
+    alert_to   = os.getenv("ALERT_TO")
+
+    if not sg_key or not alert_from or not alert_to:
+        log.warning("SendGrid env vars not set — skipping research email.")
+        return
+
+    with open(output_path, encoding="utf-8") as f:
+        md_content = f.read()
+
+    encoded = base64.b64encode(md_content.encode("utf-8")).decode()
+    attachment = Attachment(
+        FileContent(encoded),
+        FileName(f"{month}-research.md"),
+        FileType("text/markdown"),
+        Disposition("attachment"),
+    )
+
+    html_body = (
+        "<p>Here is this month's research digest. "
+        "Review and pick the top stories for the newsletter.</p>"
+        f"<p>Attached: <strong>{month}-research.md</strong></p>"
+    )
+
+    message = Mail(
+        from_email=alert_from,
+        to_emails=alert_to,
+        subject=f"Sports D3c0d3d Monthly Research \u2014 {month}",
+        html_content=html_body,
+    )
+    message.attachment = attachment
+
+    try:
+        sg = SendGridAPIClient(sg_key)
+        response = sg.send(message)
+        log.info("Research email sent: status=%s", response.status_code)
+        if response.status_code >= 400:
+            log.error("SendGrid returned error status %s: %s", response.status_code, response.body)
+    except Exception as exc:
+        log.error("Failed to send research email: %s", exc)
+
+
 def run():
     month = datetime.now().strftime("%Y-%m")
     log.info("Loading articles for %s…", month)
@@ -456,6 +506,8 @@ def run():
     print(f"  Articles scored   : {len(scored)}")
     print(f"  Jobs included     : {len(jobs_df) if jobs_df is not None else 0}")
     print(f"  Output            : {output_path}")
+
+    email_research_digest(output_path, month)
 
 
 if __name__ == "__main__":
