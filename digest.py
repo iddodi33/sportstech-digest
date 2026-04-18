@@ -154,7 +154,9 @@ Each item must have ALL of these keys:
   "score": <1-5>
   "category": one of: Funding | Product Launch | Company News | Industry Report | Partnership | Event | Other
   "score_reason": <5-8 words explaining the score>
-  "summary": <40-60 word editorial summary — factual, Irish-ecosystem-builder voice, short punchy phrasing, never starts with "Exciting news" or "Delighted", mentions company + what happened + why it matters, no hype. Prepend ⭐ if score is 5.>
+  "summary": <Exactly 2 sentences, 40-60 words total. Sentence 1: what happened, who did it, where (include Irish angle if present). Sentence 2: why it matters, what it enables, or what context helps the reader understand significance. Never just restate the headline. Factual, Irish-ecosystem-builder voice, no hype, never starts with "Exciting news" or "Delighted". Prepend ⭐ if score is 5.
+  BAD (too short, just restates headline): "Output Sports launches HYROX365 Athlete Readiness Test."
+  GOOD (gives context and why-it-matters): "Dublin-based Output Sports has partnered with HYROX365 to launch a standardised Athlete Readiness Test using its sensor platform to measure strength, endurance, and recovery benchmarks. The partnership extends Output's reach into mass-participation fitness testing across the global HYROX network.">
   "tags": <list of 3-5 keyword strings: company names, themes, event types>
   "verticals": <list of 1-2 from: Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging>
   "mentioned_companies": <list of company names actually mentioned in the article>
