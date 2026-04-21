@@ -8,7 +8,7 @@
 
 A Python research pipeline that scrapes Irish sportstech news and jobs, scores articles with Claude, and does three things:
 
-1. **Emails Iddo** daily alerts for score 4/5 articles with LinkedIn post drafts
+1. **Emails Iddo** daily alerts for score 3+ articles with LinkedIn post drafts
 2. **Produces a monthly research markdown** on the 1st, emailed as an attachment
 3. **Writes scored articles to the Sports D3c0d3d Intelligence Hub Supabase** where they're reviewed in `/admin/news` and published to `/news`
 
@@ -18,7 +18,7 @@ A Python research pipeline that scrapes Irish sportstech news and jobs, scores a
 
 | File | Purpose |
 |------|---------|
-| `daily_monitor.py` | Fetches Google News RSS, scores with Claude, upserts score 3+ to hub Supabase, sends email alerts for score 4/5 with LinkedIn post drafts |
+| `daily_monitor.py` | Fetches Google News RSS, scores with Claude, upserts score 3+ to hub Supabase, sends email alerts for score 3+ with LinkedIn post drafts |
 | `digest.py` | Monthly: scores `news_raw_YYYY-MM.json`, writes `research/YYYY-MM-research.md`, upserts score 3+ to hub Supabase, emails markdown as attachment |
 | `news_pipeline.py` | Scrapes RSS + direct sources, decodes Google News redirects via googlenewsdecoder, writes `news_raw_YYYY-MM.json` |
 | `enhanced_sportstech_job_scraper_v3.py` | Scrapes Irish sportstech jobs from LinkedIn, WHOOP, Adzuna, writes CSV |
@@ -36,7 +36,7 @@ A Python research pipeline that scrapes Irish sportstech news and jobs, scores a
 | 2 | Irish sports without tech angle, operations roles |
 | 1 | Off-topic, no sports angle, duplicate |
 
-Email alerts fire for **score 4 and 5 only**. Supabase upserts happen for **score 3+**.
+Email alerts fire for **score 3+** (lowered from 4/5 on 21 Apr 2026 after decision to surface European sportstech research angles for content). Supabase upserts happen for **score 3+**.
 
 ---
 
@@ -139,7 +139,7 @@ SendGrid sender domain `sportsd3c0d3d.ie` is authenticated via CNAME records at 
 
 ## Do not change
 
-- The daily email with LinkedIn draft (fires for score 4/5)
+- The daily email with LinkedIn draft (fires for score 3+)
 - The monthly email with markdown attachment
 - The `daily_monitor_seen.json` dedup logic
 - The monthly research markdown output
@@ -199,3 +199,19 @@ SendGrid sender domain `sportsd3c0d3d.ie` is authenticated via CNAME records at 
 - **Mshale titles** — mshale.com is an aggregator that doesn't return usable og:title; articles from there get the ugly RSS title. Option: blacklist mshale.com domain, or reject in admin.
 - **Business Post paywall** — og:image extraction fails on paywalled articles. Falls back to brand texture card. Accepted tradeoff.
 - **SendGrid free plan** — ends 29 May 2026, needs paid upgrade for ongoing sending beyond trial
+
+---
+
+## Changes Applied 21 April 2026
+
+### LinkedIn draft prompt hardening
+- Company hallucination bug caught: a score 3 BBC article about football heading research generated a LinkedIn draft claiming STATSports "leads in wearable concussion tech". STATSports only makes GPS performance trackers.
+- Root cause: LinkedIn draft prompt had no guardrail against pattern-matching Irish sportstech company names to story themes.
+- Fix: rules added directly to `LINKEDIN_SYSTEM` prompt in `daily_monitor.py` so Claude sees them at inference time for every draft.
+- Rules embedded: verify-before-naming gate, per-company capability facts (STATSports GPS only, Orreco biomarkers only, Output Sports IMU movement only, Kitman Labs software only, Hexis nutrition software only, Danu Sports smart textiles only), white-space/opportunity framing for categories where no Irish company has a genuine product, Éanna Falvey person-vs-company distinction.
+- Explicit outcome allowed: a post with no Irish company reference is the correct default when nothing genuinely fits.
+
+### Alert threshold lowered to score 3+
+- Daily email alerts now fire for score 3+ (previously 4/5 only).
+- Rationale: score 3 articles (European sportstech research relevant to Irish audience) are useful content angles when framed honestly. The hallucination risk that previously made score 3 alerts feel wrong is now addressed by the LINKEDIN_SYSTEM prompt hardening above.
+- Supabase upsert threshold unchanged (still score 3+).
