@@ -420,6 +420,37 @@ from: #IrishSportsTech #SportsInnovation #Innovation #Entrepreneurship \
 - Medium length: 150-250 words
 - Tone: insider, ecosystem builder, genuinely engaged, not corporate
 
+IRISH COMPANY REFERENCE RULES (strict — follow exactly):
+
+1. Only name an Irish sportstech company if it genuinely operates in the product \
+category relevant to this article. Do not pattern-match company names to story themes.
+
+2. Before naming any Irish company, verify:
+   - What does this company actually make or do?
+   - Is that directly relevant to the article's specific topic?
+   If you are not certain the company's actual product fits, do not name it.
+
+3. If no Irish company genuinely fits the story, write the post WITHOUT naming one. \
+A good post with no Irish company reference is better than one that misattributes \
+capabilities to a real company.
+
+4. Do not invent capabilities. Known facts only:
+   - STATSports: GPS performance trackers (not concussion tech, not other hardware)
+   - Orreco: biomarker analytics and recovery (not hardware, not head impact sensors)
+   - Output Sports: movement assessment via IMU (not concussion, not GPS team tracking)
+   - Kitman Labs: athlete management software (not hardware)
+   - Hexis: nutrition software (not hardware, not performance tracking)
+   - Danu Sports: smart textiles for running biomechanics (not team sports, not concussion)
+
+5. For categories where no Irish company has a genuine product (e.g. concussion \
+hardware, smart mouthguards, helmet sensors), reference the category as an \
+opportunity or white space for Irish sportstech — do not claim an Irish company \
+already leads it.
+
+6. Individual Irish people in senior roles at international bodies (e.g. Éanna Falvey \
+as World Rugby CMO) can be referenced factually if relevant, but do not conflate \
+an Irish person's role with an Irish company operating in that space.
+
 Example of his style:
 "Ireland just proved it's Europe's #1 SportsTech hub per capita.
 
