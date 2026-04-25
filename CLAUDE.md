@@ -1,217 +1,316 @@
-# sportstech-digest — Claude Code Context
+# CLAUDE.md — sportstech-digest
 
-*Last updated: 18 April 2026*
-
----
-
-## What this repo is
-
-A Python research pipeline that scrapes Irish sportstech news and jobs, scores articles with Claude, and does three things:
-
-1. **Emails Iddo** daily alerts for score 3+ articles with LinkedIn post drafts
-2. **Produces a monthly research markdown** on the 1st, emailed as an attachment
-3. **Writes scored articles to the Sports D3c0d3d Intelligence Hub Supabase** where they're reviewed in `/admin/news` and published to `/news`
+*Last updated: 25 April 2026*
 
 ---
 
-## Key files
+## What This Repo Is
 
-| File | Purpose |
-|------|---------|
-| `daily_monitor.py` | Fetches Google News RSS, scores with Claude, upserts score 3+ to hub Supabase, sends email alerts for score 3+ with LinkedIn post drafts |
-| `digest.py` | Monthly: scores `news_raw_YYYY-MM.json`, writes `research/YYYY-MM-research.md`, upserts score 3+ to hub Supabase, emails markdown as attachment |
-| `news_pipeline.py` | Scrapes RSS + direct sources, decodes Google News redirects via googlenewsdecoder, writes `news_raw_YYYY-MM.json` |
-| `enhanced_sportstech_job_scraper_v3.py` | Scrapes Irish sportstech jobs from LinkedIn, WHOOP, Adzuna, writes CSV |
-| `supabase_client.py` | Writes scored articles to the hub's Supabase `news_items` table. Handles publisher name extraction, og:image and og:title fetching, and conditional upsert via RPC |
+A Python research and scraping pipeline that powers Sports D3c0d3d's intelligence operations. Three responsibilities:
 
----
+1. **News pipeline** — scrapes Irish sportstech news, scores articles with Claude, emails alerts and a monthly research markdown, writes scored articles to the hub Supabase
+2. **Jobs pipeline** — scrapes weekly job listings from ATS APIs and career pages, classifies via rule-based filters + Haiku, writes to the hub Supabase for admin review
+3. **Job scraping** — scrapes Irish sportstech jobs from LinkedIn, WHOOP, Adzuna, writes CSV (legacy, separate from new jobs pipeline)
 
-## Scoring scale
-
-| Score | Meaning |
-|-------|---------|
-| 5 | Irish sportstech company — funding, product launch, award, expansion |
-| 4 | Irish sports org adopting tech, Irish sportstech person, Irish adjacent |
-| 3 | European sportstech news relevant to Irish audience |
-| 2 | Irish sports without tech angle, operations roles |
-| 1 | Off-topic, no sports angle, duplicate |
-
-Email alerts fire for **score 3+** (lowered from 4/5 on 21 Apr 2026 after decision to surface European sportstech research angles for content). Supabase upserts happen for **score 3+**.
+Repo location: `C:\coding_projects\sportstech-digest`
 
 ---
 
-## Claude scoring prompt (important)
+## Tech Stack
 
-The scoring prompt in both `daily_monitor.py` and `digest.py` returns JSON with these fields per article:
-
-- `score` (1-5)
-- `score_reason` (short rationale, 1 sentence)
-- `summary` (exactly 2 sentences, 40-60 words total; sentence 1 = what happened who where; sentence 2 = why it matters)
-- `tags` (3-5 keyword strings)
-- `verticals` (1-2 from closed hub list)
-- `mentioned_companies` (list of company names from article)
-
-Closed vertical list (must match hub exactly):
-Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging
-
-Summary instruction includes BAD/GOOD examples inside the prompt string (not just comments) so Claude sees them at inference time.
+| Layer | Choice |
+|---|---|
+| Language | Python 3.11+ |
+| HTTP | requests, httpx |
+| HTML parsing | BeautifulSoup4 |
+| Database | Supabase Python SDK |
+| AI | Anthropic SDK (Claude Sonnet 4.5 for news scoring, Haiku 4.5 for job classification) |
+| Email | SendGrid (current trial expires 29 May 2026) |
+| Scheduling | GitHub Actions cron |
 
 ---
 
-## Google News URL resolution
-
-Google News RSS returns proxied URLs like `https://news.google.com/rss/articles/CBMi...`. These must be decoded to the real article URL or OG extraction breaks.
-
-- `daily_monitor.py` `_extract_real_url()`: uses `googlenewsdecoder` for in-window articles. Out-of-window articles fall through to Google search fallback (harmless since never scored or upserted).
-- `news_pipeline.py` `_decode_google_news_url()`: decodes Google News URLs in feeds after `entry.link` extraction. Falls back to original URL on decode failure, logs warning.
-
-**Earlier bug fixed 18 Apr 2026:** `_extract_real_url()` used to return `entry.source.href` which is a publisher homepage label, not the article URL. That made every row's URL a root domain (like `https://mshale.com`), breaking OG extraction. The fix removed that step entirely.
-
----
-
-## OG metadata extraction
-
-`fetch_og_metadata(url)` in `supabase_client.py`:
-
-- Fetches article page with realistic User-Agent, 10s timeout
-- Extracts `og:image` (with `twitter:image` fallback) and `og:title`
-- Resolves relative image URLs via `urljoin`
-- Returns `{"image_url": None, "og_title": None}` on any error, never raises
-
-`build_news_item` uses og:title when it's different from the RSS title AND ≥ 15 chars. Otherwise keeps RSS title. Preserves raw RSS title as `original_title` field always.
-
-OG fetch only happens for score 3+ articles being upserted, not all scored articles (keeps performance acceptable).
-
----
-
-## Publisher name extraction
-
-`extract_publisher(url)` in `supabase_client.py`:
-
-- Parses article URL domain
-- Maps known Irish + international sports news domains to clean publisher names via dictionary
-- Handles multi-part TLDs (`.co.uk`, `.com.au`, `.co.ie`, etc.) so e.g. `well-nation.co.uk` becomes "Well Nation"
-- Falls back to title-cased domain stem for unmapped domains
-- Returns clean names like "Silicon Republic", "Sport for Business", "Sustain Health Magazine" instead of the Google News query string that RSS feeds provide
-
----
-
-## Hub Supabase integration
-
-`upsert_news_item(item)` calls the RPC function `upsert_news_item_if_higher_score` in the hub's Supabase project (xwqmnofkvdwpagfweqmj). The RPC:
-
-- Tries to INSERT the news item with status='pending'
-- On URL conflict (unique constraint on url), only overwrites score/reason/summary if new score > existing
-- Always overwrites `mentioned_companies` (latest enrichment wins)
-- Uses COALESCE for image_url and original_title so later failed fetches don't blank out earlier good data
-- 12 parameters total: url, title, source, summary, tags, verticals, published_at, score, score_reason, mentioned_companies, image_url, original_title
-
-Fallback: if RPC is unavailable, `upsert_news_item` falls back to manual SELECT + INSERT/UPDATE. Logs failures but never crashes.
-
----
-
-## Environment variables
+## Repo Structure
 
 ```
-ANTHROPIC_API_KEY
-ADZUNA_APP_ID
-ADZUNA_APP_KEY
-SENDGRID_API_KEY
+sportstech-digest/
+  daily_monitor.py                    News: daily 9am UTC alert with LinkedIn drafts
+  digest.py                           News: monthly 1st-of-month research markdown email
+  news_pipeline.py                    News: RSS + direct scraping, googlenewsdecoder
+  enhanced_sportstech_job_scraper_v3.py    Legacy job CSV scraper (LinkedIn, WHOOP, Adzuna)
+  supabase_client.py                  News: writes scored articles to hub Supabase
+  
+  jobs_pipeline/                      NEW 24-25 April 2026: weekly job scraper
+    __init__.py
+    supabase_jobs_client.py           Singleton client, get_active_sources(), upsert_job() RPC
+    classifier.py                     Rule-based pre-filter + Haiku classifier
+    run_classifier.py                 Entry point for classification pass
+    adapters/
+      __init__.py
+      base.py                         BaseAdapter (fetch abstract, run concrete)
+      greenhouse.py                   Greenhouse public API
+      ashby.py                        Ashby JSON API
+      lever.py                        Lever public API
+      personio.py                     Personio search.json
+      breezy.py                       Breezy /json
+      bamboohr.py                     BambooHR /careers/list
+      teamtailor.py                   Teamtailor JSON:API + HTML fallback
+      workday.py                      Workday POST + pagination
+      rippling.py                     Rippling /api/v2/board/{slug}/jobs
+      phenom.py                       Phenom People standard REST (some tenants use widget API)
+    run_greenhouse.py, run_ashby.py, run_lever.py, run_personio.py,
+    run_breezy.py, run_bamboohr.py, run_teamtailor.py, run_workday.py,
+    run_rippling.py, run_phenom.py
+                                      Per-platform entry points
+  
+  jobs_discovery/                     One-off discovery + import (deprecated after 24 April)
+    career_pages.csv                  74-row source-of-truth that seeded company_careers_sources
+    discover_career_pages.py          Initial multi-platform discovery script
+    import_to_supabase.py             One-off CSV → Supabase import (already run)
+  
+  research/                           Monthly markdown output destination
+  .github/workflows/
+    daily_monitor.yml                 News: daily 9am UTC cron
+    monthly.yml                       News: monthly 1st-of-month cron
+```
+
+---
+
+## Environment Variables
+
+```
+ANTHROPIC_API_KEY                     Sonnet for news, Haiku for jobs
+ADZUNA_APP_ID                         Legacy job scraper
+ADZUNA_APP_KEY                        Legacy job scraper
+SENDGRID_API_KEY                      News email send
 ALERT_FROM=monitor@sportsd3c0d3d.ie
 ALERT_TO=iddodiamant@gmail.com
 NEXT_PUBLIC_SUPABASE_URL=https://xwqmnofkvdwpagfweqmj.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY   (informational, pipeline uses service role)
-SUPABASE_SERVICE_ROLE_KEY
+NEXT_PUBLIC_SUPABASE_ANON_KEY         Informational, pipeline uses service role
+SUPABASE_SERVICE_ROLE_KEY             Required for upserts to hub
 ```
 
-GitHub Actions secrets required for both workflows: all of the above.
+GitHub Actions secrets must include all of the above for both workflows.
 
-SendGrid sender domain `sportsd3c0d3d.ie` is authenticated via CNAME records at Blacknight (em7190.sportsd3c0d3d.ie, s1._domainkey, s2._domainkey). Old `em9635.sportsd3c0d3d.com` verification exists but is stale.
+---
+
+## News Pipeline (existing, established 18 April 2026)
+
+### Daily flow (`daily_monitor.py`, runs 9am UTC daily)
+1. Fetches Google News RSS feeds for Irish sportstech keywords
+2. Decodes Google News redirect URLs via `googlenewsdecoder`
+3. Scores each article 1-5 via Claude Sonnet 4.5
+4. Upserts score 3+ articles to hub `news_items` table via `upsert_news_item_if_higher_score` RPC
+5. Sends alert email to Iddo with LinkedIn post drafts for all score 3+ articles
+6. Persists `daily_monitor_seen.json` for dedup across runs (committed by GitHub Actions)
+
+### Monthly flow (`digest.py` + `news_pipeline.py`, runs 1st of month 9am UTC)
+1. Reads `news_raw_YYYY-MM.json` (collected by `news_pipeline.py` throughout the month)
+2. Scores all articles via Claude Sonnet 4.5
+3. Writes `research/YYYY-MM-research.md`
+4. Upserts score 3+ to hub Supabase (same RPC)
+5. Emails markdown as attachment to Iddo
+
+### Scoring scale
+- 5: Irish sportstech company — funding, product launch, award, expansion
+- 4: Irish sports org adopting tech, Irish sportstech person
+- 3: European sportstech news relevant to Irish audience
+- 2: Irish sports without tech angle, operations roles
+- 1: Off-topic, no sports angle, duplicate
+
+### Claude scoring prompt fields
+score, score_reason, summary (2 sentences, 40-60 words), tags, verticals (closed list), mentioned_companies.
+
+### Closed vertical list (must match hub)
+Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging
+
+### OG metadata extraction
+`fetch_og_metadata(url)` in `supabase_client.py` extracts og:image and og:title with realistic User-Agent and 10s timeout. Used to populate hub news cards. og:title preferred over RSS title when ≥15 chars and different.
+
+### Publisher name extraction
+`extract_publisher(url)` maps known Irish + international news domains to clean names via dictionary. Handles multi-part TLDs (.co.uk, .com.au, .co.ie). Falls back to title-cased domain stem. Rectified 12 incorrectly-cased values 25 April at hub data layer (Ucd → UCD, Sportsbusinessjournal → Sports Business Journal, etc.) — extractor logic also tightened.
+
+### SendGrid status
+Domain `sportsd3c0d3d.ie` authenticated via CNAME records at Blacknight (em7190, s1._domainkey, s2._domainkey). Free trial ends **29 May 2026**, requires paid upgrade for ongoing sending.
+
+---
+
+## Jobs Pipeline (built 24-25 April 2026)
+
+### Architecture
+
+Weekly scrape, not daily. Jobs change slower than news. Target run: Sunday night or Monday morning UTC. GitHub Actions cron not yet wired up.
+
+Adapters are dumb transport: fetch, normalise, write. No filtering or classification at the adapter layer — that happens downstream in the classifier.
+
+### Per-adapter notes (live spec corrections discovered during build)
+
+**greenhouse.py** (4 companies: Hudl, Riot Games, Genius Sports, Fanatics)
+- GET `boards-api.greenhouse.io/v1/boards/{slug}/jobs`
+- Content is HTML-entity-escaped — used `html.unescape()` before BS4 strip
+
+**ashby.py** (4 companies: WHOOP, Strava, Teamworks, STATSports)
+- GET `api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true`
+- Field name corrections: `shouldDisplayCompensationOnJobPostings` (not OnJobBoard), `compensation.compensationTierSummary` (not tierSummary)
+- `descriptionPlain` preferred over descriptionHtml
+
+**lever.py** (1 company: Kitman Labs)
+- GET `api.lever.co/v0/postings/{slug}?mode=json`
+- `description` field is HTML in current API — used `descriptionPlain + descriptionBodyPlain`
+
+**personio.py** (1 company: Output Sports)
+- GET `{slug}.jobs.personio.com/search.json`
+- search.json doesn't include descriptions — set summary=null
+- Response has no `url` field — URL constructed from slug+id
+
+**breezy.py** (1 company: SportsKey)
+- GET `{slug}.breezy.hr/json`
+- Field is `id` not `_id`; /json only returns published jobs (no state filter needed)
+
+**bamboohr.py** (2 companies: Catapult, EA Sports)
+- GET `{slug}.bamboohr.com/careers/list`
+- Returns JSON despite the URL pattern — initial spec said HTML
+
+**teamtailor.py** (2 companies: Boylesports, Stats Perform)
+- Both on custom domains (no slug)
+- JSON:API at `careers.{domain}/jobs.json` blocked by section.io CDN (HTTP 406)
+- HTML fallback used; Boylesports works, Stats Perform does not (their HTML is JS-rendered)
+
+**workday.py** (2 companies: DraftKings, Flutter Entertainment)
+- POST `{tenant}.wd{pod}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`
+- Country filter via `appliedFacets.locationCountry` not supported by all tenants — DraftKings tenant doesn't expose country facet
+- Stops paginating when page returns < limit jobs (in case `total` shifts mid-scrape)
+- DraftKings: tenant=draftkings, pod=1, site=DraftKings (capital D matters)
+- Flutter: tenant=flutterbe, pod=3, site=FlutterUKI_External
+
+**rippling.py** (2 companies: PFF, Thrive Global)
+- GET `ats.rippling.com/api/v2/board/{slug}/jobs?page=N&pageSize=50`
+- Listings response is metadata only — descriptions require per-job detail fetch (skipped for now to keep adapter simple)
+- Spec corrections: `officeLabel` is actually `locations[0].name`, `absolute_url` is actually `url`
+- workplaceType/employmentType not in listings response
+
+**phenom.py** (built but no working tenant currently)
+- GET `careers.{tenant}.com/api/apply/v2/jobs?lang=en_us&pagesize=N&from=N`
+- Pagination via `from` parameter, response shape `{status, data: {totalHits, results}}`
+- Blizzard tenant uses non-standard widget API with private DDO session keys, raises clear RuntimeError
+- Adapter would work for any tenant on standard public REST
+
+### Classifier (`classifier.py` + `run_classifier.py`)
+
+Rule-based pre-filter (run before Haiku):
+
+1. **Junior keyword reject** — word-boundary regex `\b(junior|intern|internship|graduate|entry[\s-]level|trainee|apprentice)\b`. 'Associate' allowed through (too ambiguous). Bug fixed 25 April: `\bintern\b` boundary prevents 'Internal Auditor' false positive.
+
+2. **FDI geography reject** — for `is_fdi=true AND is_irish_founded=false`. Ireland-eligible whitelist: dublin, cork, galway, limerick, belfast, waterford, ireland, ', ie', 'co. ', plus 'remote - emea/europe/eu'. Reject patterns: 'remote - us/canada/latam/apac/anz', US state suffixes, named non-Ireland European cities. **Tightened 25 April** to also reject 'multiple locations', '2 locations', '3 locations', 'multiple cities', 'various locations'.
+   - **Known gap**: pattern is fixed list, not regex. '6 locations' wasn't caught in Flutter scrape. Update needed: switch to `\d+ locations?` regex.
+
+3. **Sportstech relevance reject** (after Haiku) — auto-rejects roles where `sportstech_relevance == 'not_sportstech'` (back-office: general accounting, HR ops, facilities, admin). 'Ambiguous' stays pending.
+
+Haiku classification (Haiku 4.5):
+- seniority (mid|senior|lead|executive)
+- employment_type
+- remote_status
+- vertical (12 closed-list values, defaults to company's existing vertical)
+- location_normalised
+- sportstech_relevance
+
+Field normalisation layer handles Haiku enum drift (`fixed_term_contract` → null, `permanent` → null, `office` → null, `graduate` → null).
+
+### Run pattern
+
+```
+.venv\Scripts\Activate.ps1                       (Windows PowerShell)
+source venv/bin/activate                         (bash)
+
+python jobs_pipeline/run_greenhouse.py
+python jobs_pipeline/run_ashby.py
+python jobs_pipeline/run_lever.py
+python jobs_pipeline/run_personio.py
+python jobs_pipeline/run_breezy.py
+python jobs_pipeline/run_bamboohr.py
+python jobs_pipeline/run_teamtailor.py
+python jobs_pipeline/run_workday.py
+python jobs_pipeline/run_rippling.py
+python jobs_pipeline/run_classifier.py
+```
+
+Total raw scraped: ~640 jobs across all adapters. Classifier produced 30 pending in first run, 7 more after second pass. Admin reviewed → 13 approved live on hub.
+
+### Hub integration
+
+All adapters write to hub `jobs` table via `upsert_job` RPC (10 args). RPC handles dedup by URL, preserves `first_seen_at`, updates `last_seen_at`, never regresses status (so admin decisions persist across re-scrapes). Returns `(id, was_inserted, was_reactivated)` for adapter logging.
+
+---
+
+## Hub Supabase Integration (shared across both pipelines)
+
+Hub project: xwqmnofkvdwpagfweqmj (West EU/Ireland).
+
+### Tables written to from this repo
+
+- `news_items` — via `upsert_news_item_if_higher_score` RPC (12 args)
+- `jobs` — via `upsert_job` RPC (10 args)
+- `company_careers_sources` — read-only (one-off import done 24 April)
+
+### RPC signatures
+
+`upsert_news_item_if_higher_score(p_url, p_title, p_source, p_summary, p_tags, p_verticals, p_published_at, p_score, p_score_reason, p_mentioned_companies, p_image_url, p_original_title)` — only overwrites score/reason when new score is higher; COALESCE on image_url and original_title.
+
+`upsert_job(p_url, p_title, p_source, p_sources_source_id, p_company_id, p_company_name, p_location_raw, p_summary, p_salary_range, p_scraped_at)` — non-archived URL match: updates mutable fields + last_seen_at, preserves status/classification/admin audit. Archived URL match: flags was_reactivated=true, inserts fresh pending row. SECURITY DEFINER, service_role only.
 
 ---
 
 ## GitHub Actions
 
-- `.github/workflows/daily_monitor.yml` — runs `daily_monitor.py` at 9am UTC daily; commits `daily_monitor_seen.json`
-- `.github/workflows/monthly.yml` — runs full pipeline on the 1st of each month at 9am UTC
+- `.github/workflows/daily_monitor.yml` — `daily_monitor.py` at 9am UTC daily; commits `daily_monitor_seen.json`
+- `.github/workflows/monthly.yml` — full news pipeline on the 1st of each month at 9am UTC
+- ⬜ Jobs pipeline weekly cron — not yet wired up
 
 ---
 
 ## Do not change
 
-- The daily email with LinkedIn draft (fires for score 3+)
-- The monthly email with markdown attachment
+- The daily news email with LinkedIn draft (fires for score 3+)
+- The monthly news email with markdown attachment
 - The `daily_monitor_seen.json` dedup logic
-- The monthly research markdown output
-- The existing 1–5 scoring criteria
+- The 1-5 news scoring criteria
+- The `LINKEDIN_SYSTEM` prompt's company-hallucination guardrails (added 21 April after STATSports/concussion-tech false claim)
 
 ---
 
-## Changes Applied 18 April 2026
+## Recent Changes Log
 
-### Hardened scraper pipeline (early in day)
-- Retry logic on Claude API calls in `daily_monitor.py`
-- Extended lookback window to 72 hours
-- Fixed feed sources and broadened queries in `news_pipeline.py`
-- `daily_monitor_seen.json` persisted across Actions runs
+### 25 April 2026 — Second-pass ATS investigation, Phenom + Rippling adapters, hub UI live
+- Built Phenom and Rippling adapters
+- Reclassified 4 companies from custom_html to proper ATS rows in `company_careers_sources` (Blizzard→phenom, Flutter→workday, PFF/Thrive Global→rippling)
+- 6 indigenous Irish companies reclassified custom_html → linkedin_only
+- Blizzard later reclassified again to linkedin_only after discovering Phenom widget-API limitation
+- Re-ran Workday adapter to pick up Flutter — 22 jobs scraped including 4 Dublin-tagged
+- Classifier ran on 24 new jobs: 7 added to pending review queue
+- Manual SQL cleanup of Flutter '6 Locations' / Leeds / Gibraltar pending rows that the regex didn't catch
+- Hub UI deployed live with admin review queue, public /jobs page, company detail integration
 
-### Hub Integration (mid-day)
-- `supabase_client.py` created with `upsert_news_item()` + `build_news_item()` + `fetch_og_metadata()` + `extract_publisher()`
-- `daily_monitor.py` upserts score 3+ articles after story dedup, before email
-- `digest.py` upserts score 3+ articles after markdown write, before email
-- Scoring prompts extended with score_reason, summary (2 sentences, 40-60 words), tags, verticals, mentioned_companies
-- RPC function `upsert_news_item_if_higher_score` in Supabase (12 parameters)
-- New env vars: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+### 24 April 2026 — Jobs pipeline foundation
+- company_careers_sources schema + 73 rows imported from career_pages.csv
+- jobs table extended with 17 new columns
+- jobs_review_feedback table
+- upsert_job RPC built and smoke-tested
+- 8 ATS adapters built (Greenhouse, Ashby, Lever, Personio, Breezy, BambooHR, Teamtailor, Workday)
+- ~618 jobs scraped on first run
+- Classifier built with rule-based pre-filter + Haiku
+- Hub admin /jobs page built (in hub repo)
 
-### Summary prompt refinement (late afternoon)
-- Summaries were too short and mechanical after initial integration
-- Prompt rewritten with explicit 2-sentence structure + BAD/GOOD examples inline
-- Output now reads as actual context-giving summaries, not headline paraphrases
+### 18 April 2026 — News pipeline integration
+- supabase_client.py created with upsert_news_item, fetch_og_metadata, extract_publisher
+- daily_monitor.py and digest.py upsert score 3+ articles to hub
+- Scoring prompts extended with score_reason, summary, tags, verticals, mentioned_companies
+- RPC `upsert_news_item_if_higher_score` (12 args) created
+- SendGrid `sportsd3c0d3d.ie` domain authenticated
+- OG image + title extraction added
+- Google News URL resolution bug fixed (returning publisher homepage as article URL)
 
-### Publisher name extraction (late afternoon)
-- Source field was storing Google News query names like `""output sports"" - Google News`
-- `extract_publisher()` added to `supabase_client.py` with domain mapping dictionary
-- Multi-part TLD handling added (`.co.uk`, `.com.au`, etc.)
-- Backfill SQL run on existing rows to clean their source fields
-
-### SendGrid domain authentication (early evening)
-- Emails were returning 403 Forbidden since integration start
-- Root cause: SendGrid had authenticated `sportsd3c0d3d.com` (wrong TLD) but we send from `sportsd3c0d3d.ie`
-- Added 3 CNAME records to Blacknight DNS: em7190, s1._domainkey, s2._domainkey
-- Domain now verified in SendGrid, test send returned 202
-- Free trial ends 29 May 2026 (needs upgrade plan by then)
-
-### OG image + title extraction (evening)
-- Added `fetch_og_metadata()` to extract og:image and og:title from article pages
-- Added `image_url` and `original_title` columns to `news_items` in Supabase
-- RPC function updated from 10 args to 12 args
-- `build_news_item` uses og:title when cleaner than RSS title (≥15 chars, different from RSS)
-
-### Google News URL resolution bug fix (evening)
-- `_extract_real_url()` was returning `entry.source.href` (publisher homepage) as the article URL
-- All rows stored root domains instead of article paths
-- Removed the bad step, added `googlenewsdecoder` package
-- In-window articles now decoded to real article URLs
-- `news_pipeline.py` also got `_decode_google_news_url()` for the monthly path
-
-### Known issues / backlog
-- **Adzuna API 404** — URL format needs fixing, low priority (LinkedIn covers job queries)
-- **Mshale titles** — mshale.com is an aggregator that doesn't return usable og:title; articles from there get the ugly RSS title. Option: blacklist mshale.com domain, or reject in admin.
-- **Business Post paywall** — og:image extraction fails on paywalled articles. Falls back to brand texture card. Accepted tradeoff.
-- **SendGrid free plan** — ends 29 May 2026, needs paid upgrade for ongoing sending beyond trial
-
----
-
-## Changes Applied 21 April 2026
-
-### LinkedIn draft prompt hardening
-- Company hallucination bug caught: a score 3 BBC article about football heading research generated a LinkedIn draft claiming STATSports "leads in wearable concussion tech". STATSports only makes GPS performance trackers.
-- Root cause: LinkedIn draft prompt had no guardrail against pattern-matching Irish sportstech company names to story themes.
-- Fix: rules added directly to `LINKEDIN_SYSTEM` prompt in `daily_monitor.py` so Claude sees them at inference time for every draft.
-- Rules embedded: verify-before-naming gate, per-company capability facts (STATSports GPS only, Orreco biomarkers only, Output Sports IMU movement only, Kitman Labs software only, Hexis nutrition software only, Danu Sports smart textiles only), white-space/opportunity framing for categories where no Irish company has a genuine product, Éanna Falvey person-vs-company distinction.
-- Explicit outcome allowed: a post with no Irish company reference is the correct default when nothing genuinely fits.
-
-### Alert threshold lowered to score 3+
-- Daily email alerts now fire for score 3+ (previously 4/5 only).
-- Rationale: score 3 articles (European sportstech research relevant to Irish audience) are useful content angles when framed honestly. The hallucination risk that previously made score 3 alerts feel wrong is now addressed by the LINKEDIN_SYSTEM prompt hardening above.
-- Supabase upsert threshold unchanged (still score 3+).
+### 21 April 2026 — LinkedIn draft prompt hardening
+- Company hallucination bug caught (STATSports falsely associated with concussion tech)
+- Verify-before-naming guardrails added directly to LINKEDIN_SYSTEM prompt
+- Per-company capability facts embedded (STATSports GPS only, Orreco biomarkers only, etc.)
+- Alert threshold lowered to score 3+
