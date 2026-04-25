@@ -10,4 +10,4 @@ __pycache__/
 *.pyc
 research/
 !research/*.md
-.venv/
+.venv/jobs_discovery/probe_log.txt
