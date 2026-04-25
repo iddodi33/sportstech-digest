@@ -11,3 +11,5 @@ __pycache__/
 research/
 !research/*.md
 .venv/jobs_discovery/probe_log.txt
+!jobs_discovery/career_pages.csv
+!jobs_discovery/companies_to_discover.csv

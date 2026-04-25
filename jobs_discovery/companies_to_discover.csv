@@ -1,0 +1,75 @@
+company_id,name,website,linkedin,city,is_fdi,is_irish_founded,scope_reason
+03994a72-edcf-418f-abb1-a391a8cd6c76,WiiStream,http://www.wiistream.com,http://www.linkedin.com/company/wiistream,Dublin,false,true,indigenous-10plus
+1743fe67-02b0-49ef-b5f4-222ab52d56ef,Incisiv,http://www.incisiv.io,http://www.linkedin.com/company/incisiv,Belfast,false,true,indigenous-10plus
+0b7fc614-f018-4c95-8205-fae7ee5a85fc,Wylde,http://www.wylde.gg,http://www.linkedin.com/company/wylde-gg,Cork,false,true,indigenous-10plus
+122aa4f1-ffef-419c-ac3f-0fab709d5e03,ClubZap,http://www.clubzap.com,http://www.linkedin.com/company/clubzap,Sixmilebridge,false,true,indigenous-10plus
+1f5b9921-ab1d-4de6-8b0c-5e1512aa0add,4D Sight,http://www.4dsight.com,http://www.linkedin.com/company/4dsight,Dublin,false,true,indigenous-10plus
+246209bc-7f37-4374-b6d1-9ec16ffdd7e1,Output Sports,http://www.outputsports.com,http://www.linkedin.com/company/output-sports,Dublin,false,true,indigenous-10plus
+2677e7cd-6994-4098-8559-ce519b77787e,Fitbit,http://www.fitbit.com,http://www.linkedin.com/company/fitbit,Dublin,true,false,fdi
+2c80303c-f5ea-4b61-8a47-c7db080d974a,Danu Sport,http://www.danusports.com,http://www.linkedin.com/company/danu-sports,Dublin,false,true,indigenous-10plus
+2bc5973f-162d-4656-800f-9b6932ad9e75,Hamstring Solo,https://hamstringsolo.com,,Kilkenny,false,true,indigenous-tech-under10
+35d4aa72-fe89-4c6d-a01f-7f521fb52ff1,Instacoach,http://www.instacoach.com,http://www.linkedin.com/company/bookinstacoach,Dublin,false,true,indigenous-10plus
+36c8199b-001a-48cf-aff2-9670f1dae265,Legitfit,http://www.legitfit.com,http://www.linkedin.com/company/legitfit,Cork,false,true,indigenous-10plus
+3c9d33ed-0e6a-4486-86c2-529a6b7e9f00,KinetikIQ,https://www.kinetikiq.com,https://www.linkedin.com/company/precision-sports-technology,Galway,false,true,indigenous-10plus
+3ef00832-d82e-49c7-98e2-701dc3197b51,Boylesports,http://www.boylesports.com,http://www.linkedin.com/company/boylesports,Dundalk,false,true,indigenous-10plus
+402f56ef-1470-49e7-919e-ed7b3ddb6922,Genius Sports,http://www.geniussports.com,http://www.linkedin.com/company/geniussports,Dublin,true,false,fdi
+40346caa-ce79-44c7-b8b4-be6ef13b2e9c,Stats Perform,http://www.statsperform.com,http://www.linkedin.com/company/stats-perform,Limerick,true,false,fdi
+4238d1d5-81ff-4b41-b636-8a90da9bc250,Fanmode,http://www.fanmode.com,http://www.linkedin.com/company/fanmode,Dublin,false,true,indigenous-10plus
+49c041a1-d251-46da-aeec-d6e000c147bc,EA Sports,https://www.ea.com,https://www.linkedin.com/company/electronic-arts/life/ea-galway,Galway,true,false,fdi
+53ed7075-ff96-4b7b-a418-65e15f569ed2,RunAngel,http://www.runangel.com,http://www.linkedin.com/company/run-angel,Dublin,false,true,indigenous-tech-under10
+5788e200-3acc-40ac-a0c9-80f197f49d4d,53six Limited,http://www.53six.ie,http://www.linkedin.com/company/53six,Dublin,false,true,indigenous-10plus
+5a5e5376-f980-4744-aff4-75d41aec32be,Hotfoot,http://www.hotfootrecruiters.com,http://www.linkedin.com/company/hotfoot-recruiters,Killarney,false,true,indigenous-10plus
+5f62e0b1-7bdc-4c3f-9dcd-67b26c5b7bab,Riot Games,http://www.riotgames.com,http://www.linkedin.com/company/riot-games,Dublin,true,false,fdi
+604ccd46-0220-4480-9c2a-8c661256e401,EquiRatings,http://www.equiratings.com,http://www.linkedin.com/company/equiratings,Carlow,false,true,indigenous-10plus
+6170bf79-a73b-4d97-9df3-32521c22b2ac,Glofox,https://www.glofox.com,https://www.linkedin.com/company/abcglofox,Dublin,false,true,indigenous-10plus
+63d0e544-85b4-4338-bf7c-c85307d8c0bc,Locker,http://www.wantlocker.com,http://www.linkedin.com/company/wantlocker,Galway,false,true,indigenous-10plus
+65448e16-4e6d-4671-a2bb-7b7ca76c5529,Clubber TV,https://www.clubber.ie,https://www.linkedin.com/company/clubbertv,Dublin,false,true,indigenous-10plus
+6b72ae64-ccae-4062-b098-69ab78599f37,BR Sensors + Systems,http://www.beasensors.com,http://www.linkedin.com/company/bea-europe,Dublin,false,true,indigenous-10plus
+6b98aa13-437d-47c3-9783-194d298b0cd1,Playhera,http://www.playhera.com,http://www.linkedin.com/company/playhera,Dublin,false,true,indigenous-10plus
+74d999e0-22b1-4e01-a9df-35d8972d9f9f,Extratime,http://www.extratime.com,http://www.linkedin.com/company/extratime-ie,Dublin,false,true,indigenous-10plus
+75b56223-b532-431c-bfe5-27f25c9b6be3,WHOOP,http://www.whoop.com,http://www.linkedin.com/company/whoop,Dublin,true,false,fdi
+75b69787-4e6b-4771-b8ed-e89532abce2f,Sports Events 365,http://www.sportsevents365.com,http://www.linkedin.com/company/sports-events-365,Enniscorthy,false,true,indigenous-10plus
+777223d6-a287-488d-bc30-a73a71b796e4,DraftKings,http://www.draftkings.com,http://www.linkedin.com/company/draftkings-inc-,Dublin,true,false,fdi
+77b54b8c-5ca0-44db-b036-1664851baecc,Fanatics,http://www.fanaticsinc.com,http://www.linkedin.com/company/fanatics-inc-,Dublin,true,false,fdi
+77c66eab-ac4c-4e0b-a1e8-6bf0a4a81eb9,Catapult,http://www.catapult.com,http://www.linkedin.com/company/catapultsports,Dublin,true,false,fdi
+7821ecc3-21e1-434b-89aa-8aa36c408602,Covers,http://www.covers.com,http://www.linkedin.com/company/covers-media-group-limited,Galway,false,true,indigenous-10plus
+78970ee1-a930-40ce-a0d6-85f36deb2b1a,Pundit Arena,https://punditarena.com,https://www.linkedin.com/company/punditarena,Dublin,false,true,indigenous-10plus
+7937d2b1-8f85-4fef-bf0b-9e14bbe001f7,Rugby Pass,http://www.rugbypass.com,http://www.linkedin.com/company/rugbypass,Dublin,false,true,indigenous-10plus
+7df5f198-c0ec-4f92-9729-560faaa1a223,Sport Endorse,http://www.sportendorse.com,http://www.linkedin.com/company/sportendorse,Dublin,false,true,indigenous-10plus
+7df834fd-dc3b-406f-afe0-897f9b0f9242,Volograms,https://www.volograms.com,https://ie.linkedin.com/company/volograms,Dublin,false,true,indigenous-10plus
+83d4af5c-2230-47cb-ba7b-9b82db7f356c,Impact Gumshields,http://www.impactgumshields.com,http://www.linkedin.com/company/impact-gumshields,Sandyford,false,true,indigenous-tech-under10
+851505a2-ad27-4a71-a54b-1768aeca00c9,InStat Sport,https://instat.sport,https://ie.linkedin.com/company/instat-sport,Dublin,false,true,indigenous-10plus
+8700be70-16f4-4dae-966a-0341a76b01ff,ggCircuit,http://www.ggcircuit.com,http://www.linkedin.com/company/ggcircuit,Dublin,true,false,fdi
+89c38b96-de1c-4935-a37b-0d23dcc7dcc4,ProActive Stats,http://www.proactive-md.com,http://www.linkedin.com/company/proactive-md,Limerick,false,true,indigenous-10plus
+8a611875-c1b6-4b7c-b7a7-26430fab66bd,GameGolf,http://www.gamegolf.com,http://www.linkedin.com/company/game-golf,Dublin,false,true,indigenous-10plus
+8bf66e75-bf4b-4d49-b3c2-c0db9f983117,Orreco,http://www.orreco.ai,http://www.linkedin.com/company/orreco,Galway,false,true,indigenous-10plus
+903c990c-760e-4c2d-b859-542a5be58967,BRS Golf,http://www.brsgolf.com,http://www.linkedin.com/company/brs-golf-by-golfnow,Dublin,false,true,indigenous-10plus
+959d87ac-d2b3-4054-947e-123876059518,Blizzard Entertainment,http://www.blizzard.com,http://www.linkedin.com/company/blizzard-entertainment,Dublin,true,false,fdi
+962660f0-a19d-4750-a494-9f4e469ea993,Nutritics,http://www.nutritics.com,http://www.linkedin.com/company/nutritics,Swords,false,true,indigenous-10plus
+980d58c8-d84b-4533-90bf-64d189d85dec,TeamTalk,http://www.teamtalk.com,http://www.linkedin.com/company/teamtalk,Dublin,false,true,indigenous-10plus
+987a7e6e-d30e-46fb-afa2-e1a78011994c,DB Sports Tours,http://www.dbsportstours.com,http://www.linkedin.com/company/db-sports-tours,Dublin,false,true,indigenous-10plus
+98b06218-fee2-473d-aab5-2dc157805b3c,Thrive Global,http://www.thriveglobal.com,http://www.linkedin.com/company/thrive-global,Dublin,true,false,fdi
+9d473e01-c0f1-424f-819d-357d43b7a6b6,Eventmaster,http://www.eventmaster.ie,http://www.linkedin.com/company/smarteventmaster,Limerick,false,true,indigenous-10plus
+a050a035-99f1-4c11-8107-6fbb6d26ed4b,Ultimate Rugby Limited,https://www.ultimaterugby.com,https://www.linkedin.com/company/ultimate-rugby,Dublin,false,true,indigenous-10plus
+a0a66eeb-6895-43d8-ae76-a23b4b04a2fa,Egan Concepts,http://www.egan.com,http://www.linkedin.com/company/egan-visual,Dublin,false,true,indigenous-10plus
+a1ad8e53-d1b8-4e95-8b66-01967a013502,ClubSpot,http://www.clubspot.app,http://www.linkedin.com/company/clubspot-ireland,Cavan,false,true,indigenous-10plus
+a2f2444a-90cd-4407-bea3-a26bde5a8cb8,Balls.ie,http://www.balls.ie,http://www.linkedin.com/company/balls-media,Dublin,false,true,indigenous-10plus
+a4ffa495-6eec-4ba5-bf5e-283937dfe2e3,Hexis,http://www.hexis.live,http://www.linkedin.com/company/hexis-performance,Dublin,false,true,indigenous-10plus
+a8b2ca18-b9fa-4af2-ada5-422c5db7b1dd,LiveScore,http://www.livescore.com,http://www.linkedin.com/company/livescore,Dublin,true,false,fdi
+aa2628a8-03c7-4fb0-9392-e62bd0460f9b,PFF,http://www.pff.com,http://www.linkedin.com/company/pro-football-focus,Limerick,true,false,fdi
+b108f4b5-4b6d-42dd-a8ee-72a9dc377db7,Kitman Labs,http://www.kitmanlabs.com,http://www.linkedin.com/company/kitman-labs,Dublin,false,true,indigenous-10plus
+b314f12b-1171-4210-980e-495e24316fa4,Flutter Entertainment,http://www.flutter.com,http://www.linkedin.com/company/flutter-entertainment,Dublin,true,true,fdi
+b48fadb8-6929-4c54-953f-89e82f353d0b,SportsKey,https://sportskey.com,https://www.linkedin.com/company/wearesportskey,Dublin,false,true,indigenous-10plus
+be857a12-3769-4cc7-9096-3f759a62d2f1,Torpey,http://www.torpey.ie,http://www.linkedin.com/company/torpey,Ennis,false,true,indigenous-tech-under10
+c559a985-9fc7-4212-934f-cb1e345b50f3,Teamworks,http://www.teamworks.com,http://www.linkedin.com/company/teamworksapp,Dublin,true,false,fdi
+cabfc5c5-2a05-4a28-ac3b-2994181f412f,STATSports,http://www.statsports.com,http://www.linkedin.com/company/statsports,Newry,false,true,indigenous-10plus
+df523a3f-96ac-45c0-bf07-d8d4e54398cf,Hudl,http://www.hudl.com,http://www.linkedin.com/company/hudl,Dublin,true,false,fdi
+e8eb6c10-ba1f-4367-83f0-8d40aa5b03d0,Usheru,https://www.usheru.com,https://www.linkedin.com/company/usheru,Dublin,false,true,indigenous-10plus
+e968115a-540c-4459-a6eb-db807d37793c,Strava,http://www.strava.com,http://www.linkedin.com/company/strava-inc.,Dublin,true,false,fdi
+f2b18585-f79f-4c2e-ad5e-04ce659ea066,SurfHolidays.com,https://www.surfholidays.com,https://www.linkedin.com/company/surfholidays,Dublin,false,true,indigenous-10plus
+f2cbcfbf-35e5-410b-95ec-4d475fde32d6,The Occlusion Cuff,http://www.occlusioncuff.com,,Dublin,false,true,indigenous-tech-under10
+f70b3053-3009-4ed2-aa0c-ac79b1e1b7eb,Off The Ball,http://www.offtheball.com,http://www.linkedin.com/company/off-the-ball,Dublin,false,true,indigenous-10plus
+f7155400-9271-43d3-a8d1-28ce2ac41cf5,Coras,https://coras.io,https://ie.linkedin.com/company/coras-io,Dublin,false,true,indigenous-10plus
+f8856ec3-4fc6-44e7-9150-4feb81716b2f,SportLoMo,http://www.sportlomo.com,http://www.linkedin.com/company/sportlomo,Castlebar,false,true,indigenous-10plus
+fadd6a55-6628-4a95-9699-8017a276806d,Clubforce,http://www.clubforce.com,http://www.linkedin.com/company/clubforcecom,Galway,false,true,indigenous-10plus
+fc9809c5-3f73-4d7f-ab89-9bd731d774c5,Tixserve,http://www.tixserve.com,http://www.linkedin.com/company/tixserve1,Dublin,false,true,indigenous-10plus

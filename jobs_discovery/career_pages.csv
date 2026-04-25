@@ -1,0 +1,74 @@
+company_id,name,website,careers_url,ats_platform,ats_api_endpoint,scrapability,confidence,needs_manual_review,notes,discovered_at
+03994a72-edcf-418f-abb1-a391a8cd6c76,WiiStream,http://www.wiistream.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:21:53.369541+00:00
+1743fe67-02b0-49ef-b5f4-222ab52d56ef,Incisiv,http://www.incisiv.io,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:21:53.370133+00:00
+0b7fc614-f018-4c95-8205-fae7ee5a85fc,Wylde,http://www.wylde.gg,http://www.wylde.gg/careers,custom_html,,hard,medium,FALSE,Careers page exists but limited structure,2026-04-22T22:21:53.370324+00:00
+122aa4f1-ffef-419c-ac3f-0fab709d5e03,ClubZap,http://www.clubzap.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-23T22:14:53.375142+00:00
+1f5b9921-ab1d-4de6-8b0c-5e1512aa0add,4D Sight,http://www.4dsight.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:21:53.370602+00:00
+246209bc-7f37-4374-b6d1-9ec16ffdd7e1,Output Sports,http://www.outputsports.com,https://output-sports.jobs.personio.com,personio,https://output-sports.jobs.personio.com/search.json,easy,high,FALSE,Pre-seeded,2026-04-22T22:21:53.370775+00:00
+2677e7cd-6994-4098-8559-ce519b77787e,Fitbit,http://www.fitbit.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+2c80303c-f5ea-4b61-8a47-c7db080d974a,Danu Sport,http://www.danusports.com,https://www.linkedin.com/company/danu-sports/jobs/,linkedin_only,,hard,high,FALSE,Hires directly via LinkedIn company page. Manually verified.,2026-04-24T13:39:18.424036+00:00
+2bc5973f-162d-4656-800f-9b6932ad9e75,Hamstring Solo,https://hamstringsolo.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:21:53.371126+00:00
+35d4aa72-fe89-4c6d-a01f-7f521fb52ff1,Instacoach,http://www.instacoach.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:21:53.371299+00:00
+36c8199b-001a-48cf-aff2-9670f1dae265,Legitfit,http://www.legitfit.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+3c9d33ed-0e6a-4486-86c2-529a6b7e9f00,KinetikIQ,https://www.kinetikiq.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+3ef00832-d82e-49c7-98e2-701dc3197b51,Boylesports,http://www.boylesports.com,https://careers.boylesports.com/,teamtailor,https://careers.boylesports.com/jobs.json,easy,medium,TRUE,Teamtailor endpoint best-guess; verify on first scrape run (Iddo VPN blocked at time of discovery),2026-04-24T13:39:18.424036+00:00
+402f56ef-1470-49e7-919e-ed7b3ddb6922,Genius Sports,http://www.geniussports.com,https://boards.greenhouse.io/geniussports,greenhouse,https://boards-api.greenhouse.io/v1/boards/geniussports/jobs,easy,high,FALSE,,2026-04-22T22:22:00.672031+00:00
+40346caa-ce79-44c7-b8b4-be6ef13b2e9c,Stats Perform,http://www.statsperform.com,http://www.statsperform.com/careers,teamtailor,,medium,medium,TRUE,ATS fingerprint (teamtailor) found in HTML but API probe failed,2026-04-22T22:22:01.065499+00:00
+4238d1d5-81ff-4b41-b636-8a90da9bc250,Fanmode,http://www.fanmode.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+49c041a1-d251-46da-aeec-d6e000c147bc,EA Sports,https://www.ea.com,https://ea.bamboohr.com/careers,bamboohr,https://ea.bamboohr.com/careers/list,easy,high,FALSE,,2026-04-22T22:22:03.137800+00:00
+53ed7075-ff96-4b7b-a418-65e15f569ed2,RunAngel,http://www.runangel.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:04.274310+00:00
+5788e200-3acc-40ac-a0c9-80f197f49d4d,53six Limited,http://www.53six.ie,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:04.562322+00:00
+5a5e5376-f980-4744-aff4-75d41aec32be,Hotfoot,http://www.hotfootrecruiters.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+5f62e0b1-7bdc-4c3f-9dcd-67b26c5b7bab,Riot Games,http://www.riotgames.com,https://boards.greenhouse.io/riotgames,greenhouse,https://boards-api.greenhouse.io/v1/boards/riotgames/jobs,easy,high,FALSE,,2026-04-22T22:22:07.819050+00:00
+604ccd46-0220-4480-9c2a-8c661256e401,EquiRatings,http://www.equiratings.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+6170bf79-a73b-4d97-9df3-32521c22b2ac,Glofox,https://www.glofox.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:09.373085+00:00
+63d0e544-85b4-4338-bf7c-c85307d8c0bc,Locker,http://www.wantlocker.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:10.575528+00:00
+65448e16-4e6d-4671-a2bb-7b7ca76c5529,Clubber TV,https://www.clubber.ie,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+6b72ae64-ccae-4062-b098-69ab78599f37,BR Sensors + Systems,http://www.beasensors.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+6b98aa13-437d-47c3-9783-194d298b0cd1,Playhera,http://www.playhera.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+74d999e0-22b1-4e01-a9df-35d8972d9f9f,Extratime,http://www.extratime.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:15.319533+00:00
+75b56223-b532-431c-bfe5-27f25c9b6be3,WHOOP,http://www.whoop.com,https://jobs.ashbyhq.com/whoop,ashby,https://api.ashbyhq.com/posting-api/job-board/whoop,easy,high,FALSE,,2026-04-22T22:22:16.451611+00:00
+75b69787-4e6b-4771-b8ed-e89532abce2f,Sports Events 365,http://www.sportsevents365.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:16.691457+00:00
+777223d6-a287-488d-bc30-a73a71b796e4,DraftKings,http://www.draftkings.com,https://careers.draftkings.com/jobs/,workday,https://draftkings.wd1.myworkdayjobs.com/wday/cxs/draftkings/DraftKings/jobs,medium,high,FALSE,Workday API for JSON; careers.draftkings.com/jobs/ is UI wrapper. Site=DraftKings (capital D),2026-04-24T13:39:18.424036+00:00
+77b54b8c-5ca0-44db-b036-1664851baecc,Fanatics,http://www.fanaticsinc.com,https://boards.greenhouse.io/fanaticsinc,greenhouse,https://boards-api.greenhouse.io/v1/boards/fanaticsinc/jobs,easy,high,FALSE,,2026-04-22T22:22:18.054563+00:00
+77c66eab-ac4c-4e0b-a1e8-6bf0a4a81eb9,Catapult,http://www.catapult.com,https://catapult.bamboohr.com/careers,bamboohr,https://catapult.bamboohr.com/careers/list,easy,high,FALSE,,2026-04-22T22:22:19.258775+00:00
+7821ecc3-21e1-434b-89aa-8aa36c408602,Covers,http://www.covers.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:20.175790+00:00
+78970ee1-a930-40ce-a0d6-85f36deb2b1a,Pundit Arena,https://punditarena.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:20.342489+00:00
+7937d2b1-8f85-4fef-bf0b-9e14bbe001f7,Rugby Pass,http://www.rugbypass.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+7df5f198-c0ec-4f92-9729-560faaa1a223,Sport Endorse,http://www.sportendorse.com,http://www.sportendorse.com/careers,custom_html,,hard,medium,FALSE,Careers page found but no clear job listings,2026-04-22T22:22:21.939813+00:00
+7df834fd-dc3b-406f-afe0-897f9b0f9242,Volograms,https://www.volograms.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-23T22:15:08.302936+00:00
+83d4af5c-2230-47cb-ba7b-9b82db7f356c,Impact Gumshields,http://www.impactgumshields.com,http://www.impactgumshields.com/careers,custom_html,,hard,medium,FALSE,Careers page found but no clear job listings,2026-04-22T22:22:22.886715+00:00
+851505a2-ad27-4a71-a54b-1768aeca00c9,InStat Sport,https://instat.sport,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:26.382796+00:00
+8700be70-16f4-4dae-966a-0341a76b01ff,ggCircuit,http://www.ggcircuit.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+89c38b96-de1c-4935-a37b-0d23dcc7dcc4,ProActive Stats,http://www.proactive-md.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+8a611875-c1b6-4b7c-b7a7-26430fab66bd,GameGolf,http://www.gamegolf.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:33.727089+00:00
+8bf66e75-bf4b-4d49-b3c2-c0db9f983117,Orreco,http://www.orreco.ai,https://orreco.com/careers,none_found,,none,high,FALSE,"Contact form only, hires via LinkedIn",2026-04-22T22:22:36.538159+00:00
+903c990c-760e-4c2d-b859-542a5be58967,BRS Golf,http://www.brsgolf.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:36.538332+00:00
+959d87ac-d2b3-4054-947e-123876059518,Blizzard Entertainment,http://www.blizzard.com,https://careers.blizzard.com/global/en,custom_html,,hard,medium,FALSE,Careers page found but no clear job listings,2026-04-23T22:20:31.977612+00:00
+962660f0-a19d-4750-a494-9f4e469ea993,Nutritics,http://www.nutritics.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-23T22:15:16.024268+00:00
+980d58c8-d84b-4533-90bf-64d189d85dec,TeamTalk,http://www.teamtalk.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:22:39.402906+00:00
+987a7e6e-d30e-46fb-afa2-e1a78011994c,DB Sports Tours,http://www.dbsportstours.com,http://www.dbsportstours.com/careers/,custom_html,,hard,medium,FALSE,Careers page exists but limited structure,2026-04-22T22:22:54.901886+00:00
+98b06218-fee2-473d-aab5-2dc157805b3c,Thrive Global,http://www.thriveglobal.com,https://ats.rippling.com/thriveglobal/jobs,custom_html,,medium,medium,FALSE,Custom HTML with structured job listings,2026-04-23T22:20:35.781457+00:00
+9d473e01-c0f1-424f-819d-357d43b7a6b6,Eventmaster,http://www.eventmaster.ie,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:23:17.710315+00:00
+a050a035-99f1-4c11-8107-6fbb6d26ed4b,Ultimate Rugby Limited,https://www.ultimaterugby.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+a0a66eeb-6895-43d8-ae76-a23b4b04a2fa,Egan Concepts,http://www.egan.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:23:48.919369+00:00
+a1ad8e53-d1b8-4e95-8b66-01967a013502,ClubSpot,http://www.clubspot.app,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:23:56.224026+00:00
+a2f2444a-90cd-4407-bea3-a26bde5a8cb8,Balls.ie,http://www.balls.ie,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:24:06.174731+00:00
+a4ffa495-6eec-4ba5-bf5e-283937dfe2e3,Hexis,http://www.hexis.live,https://www.hexis.live/careers,none_found,,none,high,FALSE,"Generic 'send us your CV' page, no ATS",2026-04-22T22:24:12.402853+00:00
+a8b2ca18-b9fa-4af2-ada5-422c5db7b1dd,LiveScore,http://www.livescore.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:24:12.403201+00:00
+aa2628a8-03c7-4fb0-9392-e62bd0460f9b,PFF,http://www.pff.com,http://www.pff.com/jobs,custom_html,,hard,medium,FALSE,Careers page exists but limited structure,2026-04-22T22:24:12.584660+00:00
+b108f4b5-4b6d-42dd-a8ee-72a9dc377db7,Kitman Labs,http://www.kitmanlabs.com,https://jobs.lever.co/kitmanlabs,lever,https://api.lever.co/v0/postings/kitmanlabs?mode=json,easy,high,FALSE,Pre-seeded,2026-04-22T22:24:18.899015+00:00
+b314f12b-1171-4210-980e-495e24316fa4,Flutter Entertainment,http://www.flutter.com,https://careers.flutteruki.com/search-jobs/,custom_html,,hard,medium,FALSE,Careers page found but no clear job listings,2026-04-22T22:24:18.899841+00:00
+b48fadb8-6929-4c54-953f-89e82f353d0b,SportsKey,https://sportskey.com,https://sportskey.breezy.hr,breezy,https://sportskey.breezy.hr/json,easy,high,FALSE,,2026-04-22T22:24:20.744466+00:00
+be857a12-3769-4cc7-9096-3f759a62d2f1,Torpey,http://www.torpey.ie,https://torpey.ie/pages/careers,custom_html,,hard,medium,FALSE,Careers page exists but limited structure,2026-04-23T22:20:50.458742+00:00
+c559a985-9fc7-4212-934f-cb1e345b50f3,Teamworks,http://www.teamworks.com,https://jobs.ashbyhq.com/teamworks,ashby,https://api.ashbyhq.com/posting-api/job-board/teamworks,easy,high,FALSE,,2026-04-22T22:24:23.282008+00:00
+cabfc5c5-2a05-4a28-ac3b-2994181f412f,STATSports,http://www.statsports.com,https://jobs.ashbyhq.com/statsports,ashby,https://api.ashbyhq.com/posting-api/job-board/statsports,easy,high,FALSE,,2026-04-22T22:24:24.294695+00:00
+df523a3f-96ac-45c0-bf07-d8d4e54398cf,Hudl,http://www.hudl.com,https://boards.greenhouse.io/hudl,greenhouse,https://boards-api.greenhouse.io/v1/boards/hudl/jobs,easy,high,FALSE,,2026-04-22T22:24:24.639094+00:00
+e8eb6c10-ba1f-4367-83f0-8d40aa5b03d0,Usheru,https://www.usheru.com,,none_found,,none,low,TRUE,Careers URL returned 404 on verification; no scrapable source,2026-04-24T13:39:18.424036+00:00
+e968115a-540c-4459-a6eb-db807d37793c,Strava,http://www.strava.com,https://jobs.ashbyhq.com/strava,ashby,https://api.ashbyhq.com/posting-api/job-board/strava,easy,high,FALSE,,2026-04-22T22:24:26.474413+00:00
+f2cbcfbf-35e5-410b-95ec-4d475fde32d6,The Occlusion Cuff,http://www.occlusioncuff.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:24:30.615804+00:00
+f70b3053-3009-4ed2-aa0c-ac79b1e1b7eb,Off The Ball,http://www.offtheball.com,http://www.offtheball.com/careers,custom_html,,hard,medium,FALSE,Careers page found but no clear job listings,2026-04-22T22:24:31.235140+00:00
+f7155400-9271-43d3-a8d1-28ce2ac41cf5,Coras,https://coras.io,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-23T22:15:31.167334+00:00
+f8856ec3-4fc6-44e7-9150-4feb81716b2f,SportLoMo,http://www.sportlomo.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-23T22:15:33.610762+00:00
+fadd6a55-6628-4a95-9699-8017a276806d,Clubforce,http://www.clubforce.com,,none_found,,none,high,FALSE,Hires via hr@clubforce.com and LinkedIn,2026-04-22T22:24:57.881059+00:00
+fc9809c5-3f73-4d7f-ab89-9bd731d774c5,Tixserve,http://www.tixserve.com,,none_found,,none,low,TRUE,No careers page or ATS found,2026-04-22T22:24:57.881121+00:00
