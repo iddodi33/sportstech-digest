@@ -157,7 +157,20 @@ Hub project: xwqmnofkvdwpagfweqmj.
 
 ### Direct UPDATEs from this repo
 
-- `jobs.job_function` — set by classifier and reclassify-all script via direct UPDATE (not via RPC). Top-level column added to hub schema 26 April 2026 by Workstream A1.
+- `jobs.job_function` — set by classifier and reclassify-all script via direct UPDATE (not via RPC). Column added to hub schema 26 April 2026 by Workstream A1.
+- `jobs.last_seen_in_scrape_run` — stamped by `base.py` after every successful upsert_job call (Workstream 3).
+- `company_careers_sources.last_successful_scrape_at` — stamped by `base.py` when a source run upserts ≥1 job (Workstream 3).
+- `company_careers_sources.last_scrape_run_at` — stamped by `base.py` after every source run, success or fail (Workstream 3).
+
+### New columns on hub schema (Workstream 3, 26 April 2026)
+
+Run `supabase/migrations/20260426_archive_sweep.sql` manually in the Supabase SQL editor.
+
+```
+jobs.last_seen_in_scrape_run                  timestamptz, nullable — when this job was last seen by any adapter
+company_careers_sources.last_successful_scrape_at  timestamptz, nullable — last run that returned ≥1 job
+company_careers_sources.last_scrape_run_at         timestamptz, nullable — last run attempted (pass or fail)
+```
 
 ---
 
@@ -186,6 +199,10 @@ python jobs_pipeline/run_classifier.py
 
 # One-off backfill for job_function
 python jobs_pipeline/run_reclassify_all.py
+
+# Archive sweep — dry-run first, then live
+python jobs_pipeline/run_archive_sweep.py --dry-run
+python jobs_pipeline/run_archive_sweep.py
 ```
 
 ---
@@ -206,7 +223,7 @@ python jobs_pipeline/run_reclassify_all.py
 
 ### Immediate (next session — building on today's work)
 
-1. **Workstream 3 — Archive sweep**: standalone `jobs_pipeline/run_archive_sweep.py`. Approved/pending jobs absent from scrapes for 2+ consecutive weeks AND whose source scraped successfully in the latest run → status='archived'. Add a `last_seen_in_scrape` tracking mechanism if needed.
+1. ~~**Workstream 3 — Archive sweep**~~ — shipped 26 April 2026 (see Recent Changes Log)
 2. **Workstream 4 — Weekly orchestrator**: `jobs_pipeline/run_weekly.py`. Runs all 11 adapters → classifier → archive sweep → emails Iddo a per-adapter summary via SendGrid. Failure tiers: per-URL (log + continue), per-company (log to last_scrape_error + continue), whole-run (red X in Actions, no email).
 3. **Workstream 5 — GitHub Actions weekly cron**: `.github/workflows/jobs_weekly.yml`. Sunday 22:00 UTC. Mirrors `daily_monitor.yml` pattern. Subscribe to GitHub Actions failure email notifications so silent crashes are visible.
 
@@ -222,6 +239,14 @@ python jobs_pipeline/run_reclassify_all.py
 ---
 
 ## Recent Changes Log
+
+### 26 April 2026 — Workstream 3 (archive sweep)
+
+- New migration: `supabase/migrations/20260426_archive_sweep.sql` — adds `jobs.last_seen_in_scrape_run`, `company_careers_sources.last_successful_scrape_at`, `company_careers_sources.last_scrape_run_at`, and `idx_jobs_last_seen_in_scrape_run` partial index
+- `supabase_jobs_client.py`: added `mark_job_seen()`, `mark_source_successful()`, `mark_source_attempted()`
+- `adapters/base.py`: `run()` now records `run_started_at`, stamps `last_seen_in_scrape_run` after each successful upsert, and stamps source tracking columns in a `finally` block
+- New script: `jobs_pipeline/run_archive_sweep.py` — `--dry-run` flag, source health gate (8-day window), 2-run grace period (8-day cutoff), NULL-row grace, per-source breakdown in summary
+- Schema change: run the migration in Supabase SQL editor before the first adapter run
 
 ### 26 April 2026 — Workstream A2 (job_function classifier + backfill)
 

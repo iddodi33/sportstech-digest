@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -140,3 +141,45 @@ def upsert_job(
     except Exception as exc:
         log.error("upsert_job RPC failed for '%s': %s", url[:80], exc)
         return {}
+
+
+def mark_job_seen(job_id: str, run_started_at: datetime) -> None:
+    """Stamp last_seen_in_scrape_run on a job row after a successful upsert."""
+    client = _get_client()
+    if client is None:
+        return
+    try:
+        client.table("jobs").update(
+            {"last_seen_in_scrape_run": run_started_at.isoformat()}
+        ).eq("id", job_id).execute()
+    except Exception as exc:
+        log.warning("mark_job_seen failed for job_id=%s: %s", job_id, exc)
+
+
+def mark_source_successful(source_id: str, run_started_at: datetime) -> None:
+    """Record a successful scrape (at least one job upserted) on company_careers_sources."""
+    client = _get_client()
+    if client is None:
+        return
+    ts = run_started_at.isoformat()
+    try:
+        client.table("company_careers_sources").update(
+            {"last_successful_scrape_at": ts, "last_scrape_run_at": ts}
+        ).eq("id", source_id).execute()
+    except Exception as exc:
+        log.warning("mark_source_successful failed for source_id=%s: %s", source_id, exc)
+
+
+def mark_source_attempted(source_id: str, run_started_at: datetime) -> None:
+    """Record a scrape attempt (regardless of outcome) on company_careers_sources.
+    Leaves last_successful_scrape_at untouched.
+    """
+    client = _get_client()
+    if client is None:
+        return
+    try:
+        client.table("company_careers_sources").update(
+            {"last_scrape_run_at": run_started_at.isoformat()}
+        ).eq("id", source_id).execute()
+    except Exception as exc:
+        log.warning("mark_source_attempted failed for source_id=%s: %s", source_id, exc)
