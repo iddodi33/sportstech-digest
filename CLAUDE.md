@@ -76,6 +76,7 @@ sportstech-digest/
   .github/workflows/
     daily_monitor.yml                 News: daily 9am UTC cron
     monthly.yml                       News: monthly 1st-of-month cron
+    jobs_weekly.yml                   Jobs: Friday 06:00 UTC cron + workflow_dispatch
 ```
 
 ---
@@ -186,7 +187,7 @@ company_careers_sources.last_scrape_run_at         timestamptz, nullable — las
 
 - `.github/workflows/daily_monitor.yml` — `daily_monitor.py` at 9am UTC daily; commits `daily_monitor_seen.json`
 - `.github/workflows/monthly.yml` — full news pipeline on 1st of month at 9am UTC
-- ⬜ **TODO**: Jobs pipeline weekly cron — Workstream 5 (see Next Steps)
+- `.github/workflows/jobs_weekly.yml` — `run_weekly.py` at 06:00 UTC every Friday; timeout 90 min; all 7 secrets injected
 
 ---
 
@@ -242,7 +243,9 @@ python jobs_pipeline/run_weekly.py --skip-email
 
 1. ~~**Workstream 3 — Archive sweep**~~ — shipped 26 April 2026 (see Recent Changes Log)
 2. ~~**Workstream 4 — Weekly orchestrator**~~ — shipped 26 April 2026 (see Recent Changes Log)
-3. **Workstream 5 — GitHub Actions weekly cron**: `.github/workflows/jobs_weekly.yml`. Sunday 22:00 UTC. Mirrors `daily_monitor.yml` pattern. Subscribe to GitHub Actions failure email notifications so silent crashes are visible.
+3. ~~**Workstream 5 — GitHub Actions weekly cron**~~ — shipped 26 April 2026 (see Recent Changes Log)
+
+All five workstreams are now complete. The jobs pipeline is fully autonomous: adapters scrape Friday 06:00 UTC → classifier runs → archive sweep runs → summary email sent to iddodiamant@gmail.com. Subscribe to GitHub Actions failure email notifications in repo Settings → Notifications so silent crashes surface immediately.
 
 ### Backlog (post-orchestrator)
 
@@ -256,6 +259,14 @@ python jobs_pipeline/run_weekly.py --skip-email
 ---
 
 ## Recent Changes Log
+
+### 26 April 2026 — Workstream 5 (GitHub Actions weekly cron)
+
+- New workflow: `.github/workflows/jobs_weekly.yml` — Friday 06:00 UTC cron + `workflow_dispatch`
+- `runs-on: ubuntu-latest`, `timeout-minutes: 90`, Python 3.11, pip cache
+- Actions versions: `actions/checkout@v4`, `actions/setup-python@v5`
+- All 7 secrets injected as env vars on the run step: ANTHROPIC_API_KEY, SENDGRID_API_KEY, ALERT_FROM, ALERT_TO, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SERPER_API_KEY
+- Jobs pipeline is now fully autonomous end-to-end
 
 ### 26 April 2026 — Workstream 4 (weekly orchestrator)
 
