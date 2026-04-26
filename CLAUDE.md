@@ -6,11 +6,12 @@
 
 ## What This Repo Is
 
-A Python research and scraping pipeline that powers Sports D3c0d3d's intelligence operations. Three responsibilities:
+A Python research and scraping pipeline that powers Sports D3c0d3d's intelligence operations. Four responsibilities:
 
 1. **News pipeline** — scrapes Irish sportstech news, scores articles with Claude Sonnet, emails alerts and a monthly research markdown, writes scored articles to the hub Supabase
 2. **Jobs pipeline** — scrapes weekly job listings from 11 platforms (10 ATS + LinkedIn fallback), classifies via rule-based filters + Haiku, writes to the hub Supabase
-3. **Job scraping (legacy)** — `enhanced_sportstech_job_scraper_v3.py`, separate from the new pipeline, writes CSV
+3. **Events pipeline** — extracts structured event data from HTML using Claude Sonnet 4.5, writes to the hub Supabase events table. Session 1 (extractor + test CLI) shipped 26 April 2026; Session 2 (source adapters + orchestrator + cron) is next.
+4. **Job scraping (legacy)** — `enhanced_sportstech_job_scraper_v3.py`, separate from the new pipeline, writes CSV
 
 Repo: `C:\coding_projects\sportstech-digest`
 GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
@@ -64,6 +65,12 @@ sportstech-digest/
       snapshot.py                     DB snapshot queries (job counts, sources never scraped)
       email_builder.py                HTML email construction
       sendgrid_client.py              SendGrid send wrapper
+
+  events_pipeline/                    Events extractor (Session 1: extractor + test CLI)
+    __init__.py
+    supabase_events_client.py         Singleton client, upsert_event() RPC + fallback
+    extractor.py                      fetch_html, clean_html, extract_with_claude, extract_event()
+    test_extractor.py                 CLI: python events_pipeline/test_extractor.py <url> [--upsert]
 
   jobs_discovery/                     One-off discovery scripts (career_pages.csv seeding)
     career_pages.csv                  74-row source-of-truth for company_careers_sources
@@ -213,6 +220,12 @@ python jobs_pipeline/run_reclassify_all.py
 python jobs_pipeline/run_archive_sweep.py --dry-run
 python jobs_pipeline/run_archive_sweep.py
 
+# Extract a single event URL (read-only, no DB write)
+python events_pipeline/test_extractor.py <url>
+
+# Extract and upsert to hub Supabase (source='test')
+python events_pipeline/test_extractor.py <url> --upsert
+
 # Full weekly orchestrator (adapters + classifier + sweep + email)
 python jobs_pipeline/run_weekly.py
 
@@ -259,6 +272,16 @@ All five workstreams are now complete. The jobs pipeline is fully autonomous: ad
 ---
 
 ## Recent Changes Log
+
+### 26 April 2026 — Workstream E2 Session 1 (events extraction infrastructure)
+
+- New package `events_pipeline/` with `supabase_events_client.py`, `extractor.py`, `test_extractor.py`
+- `extractor.py`: `fetch_html` (OG image extraction), `clean_html` (BeautifulSoup, strips noise, targets main/article), `extract_with_claude` (Claude Sonnet 4.5, temperature=0, max_tokens=1500, JSON parse with fence-strip fallback), `extract_event` (public entry point, adds `url` to result)
+- `supabase_events_client.py`: singleton Supabase client, `upsert_event()` calls `upsert_event_if_new` RPC then falls back to manual SELECT + INSERT/UPDATE (mirrors news upsert pattern)
+- `test_extractor.py`: `<url> [--upsert]` CLI, read-only by default, validates env vars at startup, prints JSON + summary, skips upsert for `not_relevant` results
+- New migration in hub repo: `supabase/migrations/20260426_events_rpc.sql` — `upsert_event_if_new` Postgres function (SECURITY DEFINER), updates content fields only when status='pending'
+- 3 relevance categories: sportstech, ai_tech_ireland, startup_opportunity; not_relevant for everything else
+- Session 2 remaining: source adapters (Sport for Business, Eventbrite Ireland, etc.) + orchestrator + cron
 
 ### 26 April 2026 — Workstream 5 (GitHub Actions weekly cron)
 
