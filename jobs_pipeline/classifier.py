@@ -178,7 +178,7 @@ def _build_user_prompt(job: dict, company: dict) -> str:
         f"JOB_SUMMARY: {(job.get('summary') or '')[:1500]}\n\n"
         "Return JSON with exactly these fields: seniority, employment_type, remote_status, "
         "vertical, location_normalised, sportstech_relevance, sportstech_relevance_reason, "
-        "classification_reasoning.\n\n"
+        "job_function, classification_reasoning.\n\n"
         "Use null for any field that can't be determined confidently.\n\n"
         "Seniority mapping:\n"
         "- mid: 2-5 yrs, Engineer, Analyst, Specialist, Consultant, Associate (no senior modifier)\n"
@@ -197,7 +197,18 @@ def _build_user_prompt(job: dict, company: dict) -> str:
         "location_normalised: convert location_raw to clean display. Examples:\n"
         "  'Dublin, Ireland' → 'Dublin'  |  'Limerick' → 'Limerick'\n"
         "  'Remote - EMEA' → 'Remote - EMEA'  |  '2 Locations' → 'Multiple Locations'\n"
-        "  'Boston, MA' → 'Boston, MA'  |  'London, UK' → 'London, UK'"
+        "  'Boston, MA' → 'Boston, MA'  |  'London, UK' → 'London, UK'\n\n"
+        "job_function: Return one of: Engineering (software/hardware/devops/QA/infrastructure roles), "
+        "Data & Analytics (data science, data engineering, analytics, BI, ML/AI roles), "
+        "Product & Design (product management, UX, UI, graphic/visual design, research), "
+        "Sales & Business Development (sales, BD, partnerships, account management, account executives), "
+        "Marketing & Content (marketing, content, social media, brand, PR, communications, copywriting), "
+        "Operations (project management, ops, supply chain, logistics, admin/EA, finance, legal, HR/talent), "
+        "Customer Success (customer success, support, account management focused on retention), "
+        "Other (anything that genuinely doesn't fit — legal counsel, executive roles, niche specialists), "
+        "or null if you genuinely cannot determine the function from the job title and summary. "
+        "Do not default to Other — only use it for explicit cross-functional or hard-to-categorise roles. "
+        "Use null when truly unsure."
     )
 
 
@@ -320,6 +331,32 @@ def _norm(value: str | None, mapping: dict) -> str | None:
     return mapping.get(str(value).lower().strip())
 
 
+_JOB_FUNCTION_VALID = {
+    "Engineering",
+    "Data & Analytics",
+    "Product & Design",
+    "Sales & Business Development",
+    "Marketing & Content",
+    "Operations",
+    "Customer Success",
+    "Other",
+}
+
+_JOB_FUNCTION_NULL_LITERALS = {"null", "unclassified", "none", "n/a", ""}
+
+
+def _norm_job_function(value: str | None) -> str | None:
+    if value is None:
+        return None
+    v = str(value).strip()
+    if v in _JOB_FUNCTION_VALID:
+        return v
+    if v.lower() in _JOB_FUNCTION_NULL_LITERALS:
+        return None
+    log.warning("Unexpected job_function value from Haiku: %r — normalising to None", v)
+    return None
+
+
 def normalise_haiku_fields(haiku: dict) -> dict:
     """Return a copy of haiku with DB-safe values for enum columns."""
     return {
@@ -327,6 +364,7 @@ def normalise_haiku_fields(haiku: dict) -> dict:
         "seniority": _norm(haiku.get("seniority"), _SENIORITY_MAP),
         "employment_type": _norm(haiku.get("employment_type"), _EMPLOYMENT_TYPE_MAP),
         "remote_status": _norm(haiku.get("remote_status"), _REMOTE_STATUS_MAP),
+        "job_function": _norm_job_function(haiku.get("job_function")),
     }
 
 

@@ -159,6 +159,7 @@ def main():
             "remote_status": haiku.get("remote_status"),
             "vertical": haiku.get("vertical"),
             "location_normalised": haiku.get("location_normalised"),
+            "job_function": haiku.get("job_function"),
         }
 
         if is_not_sportstech:
