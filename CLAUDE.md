@@ -10,7 +10,7 @@ A Python research and scraping pipeline that powers Sports D3c0d3d's intelligenc
 
 1. **News pipeline** — scrapes Irish sportstech news, scores articles with Claude Sonnet, emails alerts and a monthly research markdown, writes scored articles to the hub Supabase
 2. **Jobs pipeline** — scrapes weekly job listings from 11 platforms (10 ATS + LinkedIn fallback), classifies via rule-based filters + Haiku, writes to the hub Supabase
-3. **Events pipeline** — extracts structured event data from HTML using Claude Sonnet 4.5, writes to the hub Supabase events table. Session 1 (extractor + test CLI) shipped 26 April 2026; Session 2 (source adapters + orchestrator + cron) is next.
+3. **Events pipeline** — discovers Irish SportsTech event URLs via 5 source adapters, extracts structured data with Claude Sonnet 4.5, writes to the hub Supabase events table. Fully autonomous (Friday 06:00 UTC cron, parallel to jobs cron).
 4. **Job scraping (legacy)** — `enhanced_sportstech_job_scraper_v3.py`, separate from the new pipeline, writes CSV
 
 Repo: `C:\coding_projects\sportstech-digest`
@@ -66,11 +66,26 @@ sportstech-digest/
       email_builder.py                HTML email construction
       sendgrid_client.py              SendGrid send wrapper
 
-  events_pipeline/                    Events extractor (Session 1: extractor + test CLI)
+  events_pipeline/                    Events pipeline (fully autonomous, Friday 06:00 UTC)
     __init__.py
     supabase_events_client.py         Singleton client, upsert_event() RPC + fallback
     extractor.py                      fetch_html, clean_html, extract_with_claude, extract_event()
     test_extractor.py                 CLI: python events_pipeline/test_extractor.py <url> [--upsert]
+    run_weekly_events.py              Orchestrator: adapters → extract → upsert → email
+    adapters/
+      __init__.py
+      base.py                         BaseEventAdapter, AdapterResult, URL utilities
+      sport_for_business.py           Sport for Business events category
+      eventbrite_ireland.py           4 Eventbrite Ireland search categories
+      meetup.py                       8 Irish tech Meetup groups
+      irish_diversity_in_tech.py      Irish Diversity in Tech aggregator (external links)
+      ai_tinkerers_dublin.py          Dublin AI Tinkerers /p/[slug] posts
+    weekly/
+      __init__.py
+      runner.py                       Per-URL extraction + upsert, returns ExtractionResult list
+      snapshot.py                     DB snapshot (verified upcoming, pending, rejected)
+      email_builder.py                HTML email (7 sections)
+      sendgrid_client.py              SendGrid send wrapper
 
   jobs_discovery/                     One-off discovery scripts (career_pages.csv seeding)
     career_pages.csv                  74-row source-of-truth for company_careers_sources
@@ -84,6 +99,7 @@ sportstech-digest/
     daily_monitor.yml                 News: daily 9am UTC cron
     monthly.yml                       News: monthly 1st-of-month cron
     jobs_weekly.yml                   Jobs: Friday 06:00 UTC cron + workflow_dispatch
+    events_weekly.yml                 Events: Friday 06:00 UTC cron + workflow_dispatch (timeout 60 min)
 ```
 
 ---
@@ -195,6 +211,7 @@ company_careers_sources.last_scrape_run_at         timestamptz, nullable — las
 - `.github/workflows/daily_monitor.yml` — `daily_monitor.py` at 9am UTC daily; commits `daily_monitor_seen.json`
 - `.github/workflows/monthly.yml` — full news pipeline on 1st of month at 9am UTC
 - `.github/workflows/jobs_weekly.yml` — `run_weekly.py` at 06:00 UTC every Friday; timeout 90 min; all 7 secrets injected
+- `.github/workflows/events_weekly.yml` — `run_weekly_events.py` at 06:00 UTC every Friday; timeout 60 min; 4 secrets + hardcoded ALERT_FROM/ALERT_TO. Runs alongside jobs cron, no conflict.
 
 ---
 
@@ -225,6 +242,15 @@ python events_pipeline/test_extractor.py <url>
 
 # Extract and upsert to hub Supabase (source='test')
 python events_pipeline/test_extractor.py <url> --upsert
+
+# Full weekly events pipeline (adapters + extract + upsert + email)
+python events_pipeline/run_weekly_events.py
+
+# Preview email only, cap at 5 extractions (fast iteration)
+python events_pipeline/run_weekly_events.py --skip-email --limit 5
+
+# Run only one adapter, preview email
+python events_pipeline/run_weekly_events.py --source meetup --skip-email
 
 # Full weekly orchestrator (adapters + classifier + sweep + email)
 python jobs_pipeline/run_weekly.py
@@ -258,7 +284,11 @@ python jobs_pipeline/run_weekly.py --skip-email
 2. ~~**Workstream 4 — Weekly orchestrator**~~ — shipped 26 April 2026 (see Recent Changes Log)
 3. ~~**Workstream 5 — GitHub Actions weekly cron**~~ — shipped 26 April 2026 (see Recent Changes Log)
 
-All five workstreams are now complete. The jobs pipeline is fully autonomous: adapters scrape Friday 06:00 UTC → classifier runs → archive sweep runs → summary email sent to iddodiamant@gmail.com. Subscribe to GitHub Actions failure email notifications in repo Settings → Notifications so silent crashes surface immediately.
+All jobs pipeline workstreams are complete. The jobs pipeline is fully autonomous: adapters scrape Friday 06:00 UTC → classifier runs → archive sweep runs → summary email sent to iddodiamant@gmail.com.
+
+The events pipeline (Workstream E2) is also now fully autonomous — see Recent Changes Log. Both pipelines run Friday 06:00 UTC in parallel via separate GitHub Actions workflows.
+
+Subscribe to GitHub Actions failure email notifications in repo Settings → Notifications so silent crashes surface immediately.
 
 ### Backlog (post-orchestrator)
 
@@ -272,6 +302,15 @@ All five workstreams are now complete. The jobs pipeline is fully autonomous: ad
 ---
 
 ## Recent Changes Log
+
+### 26 April 2026 — Workstream E2 Session 2 (source adapters + orchestrator + cron)
+
+- 5 source adapters in `events_pipeline/adapters/`: `SportForBusinessAdapter`, `EventbriteIrelandAdapter`, `MeetupAdapter` (8 groups), `IrishDiversityInTechAdapter`, `AiTinkerersDublinAdapter`
+- `base.py`: `BaseEventAdapter`, `AdapterResult`, shared URL utilities (`strip_tracking_params`, `make_absolute`, 30-URL cap)
+- `events_pipeline/weekly/`: `runner.py` (per-URL extract + upsert, `ExtractionResult`), `snapshot.py` (verified/pending/rejected counts), `email_builder.py` (7-section HTML), `sendgrid_client.py`
+- `run_weekly_events.py`: `--skip-adapters`, `--skip-email`, `--limit N`, `--source NAME` flags; global URL dedup across adapters (first-seen adapter owns URL); suppresses httpx/httpcore noise
+- `.github/workflows/events_weekly.yml`: Friday 06:00 UTC cron + `workflow_dispatch`, timeout 60 min; runs alongside jobs cron
+- Events pipeline is now fully autonomous — parallel to the jobs pipeline
 
 ### 26 April 2026 — Workstream E2 Session 1 (events extraction infrastructure)
 

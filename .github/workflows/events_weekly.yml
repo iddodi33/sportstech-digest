@@ -1,0 +1,32 @@
+name: Weekly Events Pipeline
+
+on:
+  schedule:
+    - cron: '0 6 * * 5'  # 06:00 UTC every Friday
+  workflow_dispatch:        # allow manual trigger
+
+jobs:
+  run_weekly_events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run weekly events pipeline
+        run: python events_pipeline/run_weekly_events.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_FROM: monitor@sportsd3c0d3d.ie
+          ALERT_TO: iddodiamant@gmail.com
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
