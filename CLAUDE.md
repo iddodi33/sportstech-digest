@@ -42,20 +42,28 @@ sportstech-digest/
   enhanced_sportstech_job_scraper_v3.py    Legacy job CSV scraper
   supabase_client.py                  News: writes scored articles to hub Supabase
 
-  jobs_pipeline/                      Weekly job scraper
+  jobs_pipeline/                      Weekly job scraper + orchestrator
     __init__.py
-    supabase_jobs_client.py           Singleton client, get_active_sources(), upsert_job() RPC
+    supabase_jobs_client.py           Singleton client, get_active_sources(), upsert_job() RPC, mark_job_seen(), mark_source_*()
     classifier.py                     Rule-based pre-filter + Haiku classifier (incl. job_function)
     run_classifier.py                 Entry point for classification pass
     run_reclassify_all.py             One-off backfill script for job_function on existing jobs
+    run_archive_sweep.py              Archive stale jobs (2+ missed weekly runs, source health gate)
+    run_weekly.py                     Weekly orchestrator: all adapters → classifier → sweep → email
     adapters/
       __init__.py
-      base.py                         BaseAdapter
+      base.py                         BaseAdapter (tracks last_seen_in_scrape_run + source timestamps)
       greenhouse.py, ashby.py, lever.py, personio.py, breezy.py
       bamboohr.py, teamtailor.py, workday.py, rippling.py, phenom.py
       linkedin.py                     Serper-based LinkedIn fallback adapter
     run_<platform>.py                 Per-platform entry points
     run_linkedin.py                   --dry-run, --company flags
+    weekly/                           Orchestrator helper package
+      __init__.py
+      runner.py                       Step execution + result capture (adapters direct, classifier/sweep subprocess)
+      snapshot.py                     DB snapshot queries (job counts, sources never scraped)
+      email_builder.py                HTML email construction
+      sendgrid_client.py              SendGrid send wrapper
 
   jobs_discovery/                     One-off discovery scripts (career_pages.csv seeding)
     career_pages.csv                  74-row source-of-truth for company_careers_sources
@@ -203,6 +211,15 @@ python jobs_pipeline/run_reclassify_all.py
 # Archive sweep — dry-run first, then live
 python jobs_pipeline/run_archive_sweep.py --dry-run
 python jobs_pipeline/run_archive_sweep.py
+
+# Full weekly orchestrator (adapters + classifier + sweep + email)
+python jobs_pipeline/run_weekly.py
+
+# Preview email only, skip sending (fast iteration)
+python jobs_pipeline/run_weekly.py --skip-adapters --skip-email
+
+# Full run, preview email without sending
+python jobs_pipeline/run_weekly.py --skip-email
 ```
 
 ---
@@ -224,7 +241,7 @@ python jobs_pipeline/run_archive_sweep.py
 ### Immediate (next session — building on today's work)
 
 1. ~~**Workstream 3 — Archive sweep**~~ — shipped 26 April 2026 (see Recent Changes Log)
-2. **Workstream 4 — Weekly orchestrator**: `jobs_pipeline/run_weekly.py`. Runs all 11 adapters → classifier → archive sweep → emails Iddo a per-adapter summary via SendGrid. Failure tiers: per-URL (log + continue), per-company (log to last_scrape_error + continue), whole-run (red X in Actions, no email).
+2. ~~**Workstream 4 — Weekly orchestrator**~~ — shipped 26 April 2026 (see Recent Changes Log)
 3. **Workstream 5 — GitHub Actions weekly cron**: `.github/workflows/jobs_weekly.yml`. Sunday 22:00 UTC. Mirrors `daily_monitor.yml` pattern. Subscribe to GitHub Actions failure email notifications so silent crashes are visible.
 
 ### Backlog (post-orchestrator)
@@ -239,6 +256,17 @@ python jobs_pipeline/run_archive_sweep.py
 ---
 
 ## Recent Changes Log
+
+### 26 April 2026 — Workstream 4 (weekly orchestrator)
+
+- New package `jobs_pipeline/weekly/` with `runner.py`, `snapshot.py`, `email_builder.py`, `sendgrid_client.py`
+- New entry point `jobs_pipeline/run_weekly.py` — `--skip-adapters` and `--skip-email` flags
+- Adapter steps: direct import (structured stats returned, no parsing); LinkedIn abort + close handled
+- Classifier + archive sweep: subprocess + regex parse of stdout/stderr for structured results
+- Credit exhaustion detection: looks for "429", "rate_limit_error", "credit balance" in combined output → `credit_exhausted` status distinct from `failed`
+- Email sections: headline, pipeline state snapshot, adapter table, adapter errors, classifier, archive sweep, companies needing attention
+- Failure model: per-adapter exception caught + logged, run continues; SendGrid failure → stdout dump + exit 1
+- DB snapshot queries: approved/pending/archived counts, pending-null-function count, sources-never-scraped list
 
 ### 26 April 2026 — Workstream 3 (archive sweep)
 
