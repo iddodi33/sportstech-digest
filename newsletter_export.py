@@ -36,6 +36,7 @@ def _get_client():
 
 def _fetch_news(client, now: datetime) -> list[dict]:
     cutoff = (now - timedelta(days=30)).isoformat()
+    upper = now.isoformat()
     result = (
         client.table("news_items")
         .select(
@@ -43,7 +44,8 @@ def _fetch_news(client, now: datetime) -> list[dict]:
             "tags,verticals,mentioned_companies,published_at,image_url"
         )
         .gte("score", 3)
-        .gte("created_at", cutoff)
+        .gte("published_at", cutoff)
+        .lte("published_at", upper)
         .order("score", desc=True)
         .order("published_at", desc=True)
         .execute()
