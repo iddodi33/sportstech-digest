@@ -43,7 +43,7 @@ def _fetch_news(client, now: datetime) -> list[dict]:
             "tags,verticals,mentioned_companies,published_at,image_url"
         )
         .gte("score", 3)
-        .gte("scraped_at", cutoff)
+        .gte("created_at", cutoff)
         .order("score", desc=True)
         .order("published_at", desc=True)
         .execute()
