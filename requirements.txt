@@ -10,3 +10,4 @@ sendgrid
 supabase==2.*
 googlenewsdecoder
 aiohttp
+markdown

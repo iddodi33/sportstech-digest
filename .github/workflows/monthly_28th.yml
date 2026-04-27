@@ -81,3 +81,12 @@ jobs:
             git commit -m "Newsletter source $(date -u +%Y-%m-%d)"
             git push
           fi
+
+      - name: Email newsletter source
+        if: always()
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_FROM: monitor@sportsd3c0d3d.ie
+          ALERT_TO: iddodiamant@gmail.com
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python send_newsletter_email.py
