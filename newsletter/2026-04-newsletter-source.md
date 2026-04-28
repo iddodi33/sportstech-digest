@@ -1,5 +1,5 @@
 # Newsletter source — April 2026
-_2026-04-27 14:09 UTC_
+_2026-04-28 09:11 UTC_
 News: 22 · Jobs: 15 · Events: 2
 
 ---
