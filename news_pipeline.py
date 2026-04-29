@@ -152,6 +152,7 @@ GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=teamfeepay+ireland&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=clubspot+ireland&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=revelate+fitness+ireland&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=stegawave+ireland&hl=en-IE&gl=IE&ceid=IE:en",
     # Ecosystem people (broader queries — no forced co-occurrence, no "linkedin" keyword)
     "https://news.google.com/rss/search?q=%22Keith+Brock%22+sportstech&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=%22Keith+Brock%22+%22Enterprise+Ireland%22+sport&hl=en-IE&gl=IE&ceid=IE:en",
@@ -172,6 +173,13 @@ GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=Munster+Rugby+data&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=Connacht+Rugby+analytics&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=Ulster+Rugby+technology&hl=en-IE&gl=IE&ceid=IE:en",
+    # Legal & regulatory — Irish sport governance, data protection, AI Act, athlete rights
+    # Note: lawsociety.ie, dataprotection.ie, irishlegal.com have no RSS feeds (404 confirmed).
+    # Google News is the primary source for this cluster.
+    "https://news.google.com/rss/search?q=Ireland+sport+%22data+protection%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Ireland+sport+%22EU+AI+Act%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Ireland+%22Project+Red+Card%22&hl=en-IE&gl=IE&ceid=IE:en",
+    "https://news.google.com/rss/search?q=Ireland+sport+governance+technology&hl=en-IE&gl=IE&ceid=IE:en",
     # Europe sportstech
     "https://news.google.com/rss/search?q=sportstech+europe+startup&hl=en-IE&gl=IE&ceid=IE:en",
     "https://news.google.com/rss/search?q=sports+technology+funding+europe&hl=en-IE&gl=IE&ceid=IE:en",
