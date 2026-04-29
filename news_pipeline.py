@@ -870,8 +870,8 @@ def get_supabase_company_feeds() -> list[tuple[str, str]]:
             "select":           "name,website,total_funding,employees",
             "is_irish_founded": "eq.true",
             "is_fdi":           "eq.false",
-            "order":            "total_funding.desc.nullslast",
-            "limit":            "30",
+            "order":            "name.asc",
+            "limit":            "150",
         }
 
         response = requests.get(endpoint, headers=headers, params=params, timeout=15)
