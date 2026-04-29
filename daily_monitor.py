@@ -330,7 +330,13 @@ def score_articles(articles: list[dict]) -> list[dict]:
   Examples: "How Leinster Rugby is using data to boost fan experiences"
             "TrojanTrack grabs One to Watch prize at UCD AI accelerator"
             "Keith Brock Enterprise Ireland sportstech investment"
+  Also score 4: Irish legal/regulatory developments with a direct impact on Irish sportstech
+  companies (e.g. new DPC guidance on athlete biometric data, AI Act enforcement actions,
+  athlete data rights rulings, NGB tech-related regulation, Project Red Card developments).
 3 = European sportstech news relevant to Irish audience, Irish sports ecosystem news
+  Also score 3 minimum: Irish legal, regulatory or governance commentary on sport
+  (e.g. DPC guidance, EU AI Act implications for sport, athlete data rights, Project Red Card,
+  Law Society Gazette on sports compliance) directly relevant to Irish sportstech.
 2 = Irish sports news without tech angle, tangential sports connection
 1 = No sports angle, pure politics/property/crime/lifestyle, exact duplicate
 
@@ -513,7 +519,7 @@ def send_email(article: dict, linkedin_post: str) -> bool:
     sg_key     = os.getenv("SENDGRID_API_KEY")
     alert_from = os.getenv("ALERT_FROM")
     alert_to   = os.getenv("ALERT_TO")
-
+    alert_cc   = os.getenv("ALERT_CC", "")
     if not sg_key or not alert_from or not alert_to:
         log.error("SENDGRID_API_KEY, ALERT_FROM, or ALERT_TO not set in .env")
         return False
@@ -568,6 +574,12 @@ Article scored {score}/5 for Irish sportstech relevance.
         subject=subject,
         html_content=html_body,
     )
+
+    if alert_cc:
+        from sendgrid.helpers.mail import Cc
+        cc_addresses = [addr.strip() for addr in alert_cc.split(",") if addr.strip()]
+        for cc in cc_addresses:
+            message.add_cc(Cc(cc))
 
     try:
         sg = SendGridAPIClient(sg_key)

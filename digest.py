@@ -139,10 +139,16 @@ def score_articles_with_claude(articles: list[dict]) -> list[dict]:
   Examples: "How Leinster Rugby is using data to boost fan experiences"
             "TrojanTrack grabs One to Watch prize at UCD AI accelerator"
             "Keith Brock Enterprise Ireland sportstech investment"
+  Also score 4: Irish legal/regulatory developments with a direct impact on Irish sportstech
+  companies (e.g. new DPC guidance on athlete biometric data, AI Act enforcement actions,
+  athlete data rights rulings, NGB tech-related regulation, Project Red Card developments).
 3 = European sportstech news relevant to Irish audience, Irish sports ecosystem news
   Examples: "Federation of Irish Sport launches 2026 Sport Industry Awards"
             "PEAK Conference - The Global Home of SportsTech & Innovation"
             "How broadcasting and rights deals are reshaping rugby coverage"
+  Also score 3 minimum: Irish legal, regulatory or governance commentary on sport
+  (e.g. DPC guidance, EU AI Act implications for sport, athlete data rights, Project Red Card,
+  Law Society Gazette on sports compliance) directly relevant to Irish sportstech.
 2 = Irish sports news without tech angle, tangential sports connection, operations roles
   Examples: "Shamrock Rovers recruiting a Community Manager"
             "This Working Life: assistive technology"
