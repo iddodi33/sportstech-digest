@@ -59,7 +59,6 @@ MEDIUM_QUALITY_SOURCES = {
     "gov.ie",
 }
 LOW_QUALITY_SOURCES = {
-    "irishtechnews.ie",
     "limerickleader.ie",
     "advertiser.ie",
 }
@@ -72,6 +71,12 @@ BROADSHEET_SOURCES = {
     "irishexaminer.com",
 }
 
+# Tech news sites: high-volume but general tech — keyword-filtered like broadsheets,
+# but capped higher since their content is more niche than national newspapers.
+TECH_NEWS_SOURCES = {
+    "irishtechnews.ie",
+}
+
 _BROADSHEET_KEYWORDS = {
     "sport", "sports", "sportstech", "tech", "startup", "funding",
     "digital", "gaa", "rugby", "football", "soccer", "esports",
@@ -79,9 +84,19 @@ _BROADSHEET_KEYWORDS = {
     "ai", "innovation", "ireland",
 }
 
+# Stricter sport-only filter for tech news sites (irishtechnews.ie): excludes generic
+# tech/startup/ai terms that would let non-sportstech articles through on a tech news feed.
+_TECH_NEWS_SPORT_KEYWORDS = {
+    "sport", "sports", "sportstech", "fitness", "gaa", "rugby", "football", "soccer",
+    "esports", "stadium", "arena", "wearable", "athlete", "athletics", "gaming",
+    "streaming", "fan engagement", "sports data", "match", "league", "tournament",
+    "cycling", "triathlon", "swim", "running", "golf", "race",
+}
+
 CAP_HIGH           = 15
 CAP_BUSINESSPOST   = 10  # cloudscraper direct scrape
 CAP_BROADSHEET     = 5   # strict cap for high-volume broadsheets
+CAP_TECH_NEWS      = 10  # tech news sites: keyword-filtered like broadsheets, higher cap
 CAP_MEDIUM         = 5
 CAP_LOW            = 3
 CAP_GOOGLE_NEWS    = 10
@@ -94,16 +109,15 @@ SITE_RSS_FEEDS = [
     "https://www.thinkbusiness.ie/feed/",
     "https://businessplus.ie/feed/",
     "https://www.techcentral.ie/feed/",
-    "http://feeds.feedburner.com/IrishTechNews",  # irishtechnews.ie official Feedburner feed
+    "https://irishtechnews.ie/feed/",  # direct feed; Feedburner was lagging 12+ days
     "https://bebeez.eu/feed/",
     # RSS attempted first, scraped on failure (see SCRAPE_FALLBACK)
     "https://www.sportireland.ie/rss",
 ]
 
-# Maps specific feed URLs to their logical source name (used for labelling and cap lookup)
-_FEED_URL_SOURCE = {
-    "http://feeds.feedburner.com/IrishTechNews": "irishtechnews.ie",
-}
+# Maps specific feed URLs to their logical source name (used for labelling and cap lookup).
+# Previously held the Feedburner URL mapping; direct feed no longer needs an alias.
+_FEED_URL_SOURCE: dict[str, str] = {}
 
 GOOGLE_NEWS_FEEDS = [
     # Ireland-specific
@@ -265,6 +279,8 @@ def _cap_for(url: str, feed_type: str) -> int:
     domain = _FEED_URL_SOURCE.get(url, _domain(url))
     if domain in BROADSHEET_SOURCES:
         return CAP_BROADSHEET
+    if domain in TECH_NEWS_SOURCES:
+        return CAP_TECH_NEWS
     if domain in HIGH_QUALITY_SOURCES:
         return CAP_HIGH
     if domain in MEDIUM_QUALITY_SOURCES:
@@ -677,6 +693,7 @@ def fetch_feed(
     }
     is_bebeez     = _domain(url) == "bebeez.eu"
     is_broadsheet = _domain(url) in BROADSHEET_SOURCES
+    is_tech_news  = _domain(url) in TECH_NEWS_SOURCES
 
     try:
         # Both paths use socket-level timeout; fetch_feed_fresh wraps the same logic
@@ -727,6 +744,13 @@ def fetch_feed(
             if is_broadsheet:
                 title_lower = title.lower()
                 if not any(kw in title_lower for kw in _BROADSHEET_KEYWORDS):
+                    date_dropped += 1
+                    continue
+
+            # Tech news sites use stricter sport-only keywords to avoid general tech noise
+            if is_tech_news:
+                title_lower = title.lower()
+                if not any(kw in title_lower for kw in _TECH_NEWS_SPORT_KEYWORDS):
                     date_dropped += 1
                     continue
 
