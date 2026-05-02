@@ -28,22 +28,42 @@ LINKEDIN_WEEKLY_SYSTEM = """You write a weekly LinkedIn roundup post for Sports 
 
 Voice: confident, direct, informed. No corporate jargon. No emojis. No em dashes. No exclamation marks. British/Irish English spelling. Sounds like an Irish sports industry professional, not a press release.
 
+PICKING LOGIC — select the 5 stories to feature:
+1. Sort all input articles by score descending, then by published_at descending.
+2. Walk the sorted list and select 5 stories with this hard constraint: no two picked stories may share the same source publication, AND no two picked stories may cover the same underlying news event (for example, three articles all covering the Champions League rights deal collapse to one). The source rule applies even if the two stories from the same source cover different topics. Concrete example: if Sport for Business has two articles in the input, only the higher-scored one can be picked. The other goes to alternates regardless of its individual merit. If applying this rule leaves fewer than 5 stories, fill remaining slots from alternates by score, and at that point the source dedup is dropped for the fill slots only.
+3. Continue until you have 5 picked stories, or until you have exhausted the list.
+4. If fewer than 5 unique-source-and-topic stories exist after strict filtering, fill remaining slots with the next-best available articles by score, ignoring source/topic uniqueness for the fill.
+5. Every input article must appear in either "picked" or "alternates". Do not drop any. Do not add any.
+
+OPENER — write a stat-or-contrast hook:
+- 18 to 30 words.
+- Lead with a specific tension, contrast, or juxtaposition drawn from at least two of the five picked stories. Reference the stories by their content, not their source name or headline.
+- Examples of the register:
+  "An MLS deal in Galway and a women's sport report flagging Ireland as a laggard. Both true. Both this week."
+  "Enterprise Ireland reopens the funding tap on the same day Orreco lands MLS. Tells you where the week is going."
+- Do not start with "Here's what" or any variation. No emojis. No em dashes. No exclamation marks.
+
 Output a single JSON object with these fields and no other text:
 
 {
-  "opener": "one line, around 12 to 18 words, in the register of 'Here's what moved in Irish SportsTech this week' but freshly worded each week. If a clear theme runs through the week's stories, hint at it. Otherwise a neutral framing. Never repeat the literal phrase 'Here's what moved' verbatim.",
-  "stories": [
+  "opener": "stat-or-contrast hook, 18 to 30 words, references at least two specific picked stories by content",
+  "picked": [
     {
       "url": "exact url from input",
       "headline": "5 to 12 word headline written by you, not a copy of the article title. Lead with what happened.",
-      "relevance": "one sentence, 15 to 25 words, explaining why this matters for Irish sportstech or for Ireland's sports tech ecosystem. Derive it from the article's summary and score_reason fields. Do not invent context. If the story is European or international (score 3), the relevance line must explicitly tie it back to Ireland, Irish founders, Irish clubs, or the Irish sportstech market."
+      "relevance": "one sentence, 15 to 25 words, explaining why this matters for Irish sportstech or Ireland's sports tech ecosystem. Derive it from the article's summary and score_reason fields. Do not invent context. If the story is European or international (score 3), the relevance line must explicitly tie it back to Ireland, Irish founders, Irish clubs, or the Irish sportstech market."
     }
   ],
-  "closing": "one forward-looking line, 12 to 20 words. Something like 'Watch this space' or a substantive forward observation if the week's stories support one. No call to action. No links. No 'follow us'. No 'subscribe'.",
-  "hashtags": ["3 to 5 hashtags chosen from the week's themes. Always include #SportsTech and #Ireland. Add 1 to 3 more based on the dominant verticals or themes in the week's stories. Examples: #AI, #Wearables, #FanEngagement, #PerformanceAnalytics, #Investment, #Startups. Each hashtag is a single token, no spaces."]
+  "alternates": [
+    {
+      "url": "exact url from input",
+      "headline": "5 to 12 word headline written by you",
+      "relevance": "one sentence, 15 to 25 words, why this matters for Irish sportstech or Ireland"
+    }
+  ],
+  "closing": "one forward-looking line, 12 to 20 words. No call to action. No links. No 'follow us'. No 'subscribe'.",
+  "hashtags": ["#SportsTech", "#Ireland", "1 to 3 more based on dominant verticals or themes. Each hashtag is a single token, no spaces."]
 }
-
-Order the stories by score descending, then by published date descending. Include every article supplied. Do not drop any. Do not add any.
 
 CRITICAL ANTI-HALLUCINATION RULES (these are the same rules used in the daily monitor LinkedIn drafts):
 
@@ -127,7 +147,7 @@ def call_claude(articles: list[dict]) -> tuple[dict | None, str]:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.messages.create(
             model=MODEL,
-            max_tokens=4000,
+            max_tokens=5000,
             temperature=0.4,
             system=LINKEDIN_WEEKLY_SYSTEM,
             messages=[{"role": "user", "content": json.dumps(compact, ensure_ascii=False)}],
@@ -149,11 +169,11 @@ def call_claude(articles: list[dict]) -> tuple[dict | None, str]:
                 raise ValueError("No JSON object found in Claude response.")
             parsed = json.loads(match.group())
 
-        required = {"opener", "stories", "closing", "hashtags"}
+        required = {"opener", "picked", "alternates", "closing", "hashtags"}
         missing = required - set(parsed.keys())
         if missing:
             raise ValueError(f"Missing required fields: {missing}")
-        for story in parsed.get("stories", []):
+        for story in parsed.get("picked", []) + parsed.get("alternates", []):
             if not all(k in story for k in ("url", "headline", "relevance")):
                 raise ValueError(f"Story missing required fields: {story}")
 
@@ -164,14 +184,18 @@ def call_claude(articles: list[dict]) -> tuple[dict | None, str]:
         return None, raw
 
 
+def _story_line(story: dict) -> str:
+    """Render one story as: 'Headline - Relevance. read more-URL'"""
+    relevance = story["relevance"].rstrip(".")
+    return f"{story['headline']} - {relevance}. read more-{story['url']}"
+
+
 def build_post_text(parsed: dict) -> str:
     lines = [parsed["opener"], ""]
-    for i, story in enumerate(parsed["stories"]):
+    for i, story in enumerate(parsed["picked"]):
         if i > 0:
             lines.append("")
-        lines.append(story["headline"])
-        lines.append(f"Why it matters: {story['relevance']}")
-        lines.append(story["url"])
+        lines.append(_story_line(story))
     lines.append("")
     lines.append(parsed["closing"])
     lines.append("")
@@ -180,32 +204,18 @@ def build_post_text(parsed: dict) -> str:
     return "\n".join(lines)
 
 
-def build_source_table(parsed: dict, articles: list[dict]) -> str:
-    url_to_article = {a.get("url", ""): a for a in articles}
-    cols = ("Score", "Source", "Headline", "Relevance", "Published")
-    header = "<tr>" + "".join(
-        f"<th style='padding:6px 10px;border:1px solid #ddd;background:#f0f0f0;text-align:left;'>{c}</th>"
-        for c in cols
-    ) + "</tr>"
-    rows = []
-    for story in parsed.get("stories", []):
-        url = story.get("url", "")
-        art = url_to_article.get(url, {})
-        pub = (art.get("published_at", "") or "")[:10]
-        rows.append(
-            f"<tr>"
-            f"<td style='padding:6px 10px;border:1px solid #ddd;'>{_h(art.get('score', ''))}</td>"
-            f"<td style='padding:6px 10px;border:1px solid #ddd;'>{_h(art.get('source', ''))}</td>"
-            f"<td style='padding:6px 10px;border:1px solid #ddd;'>"
-            f"<a href='{url}'>{_h(art.get('title', url))}</a></td>"
-            f"<td style='padding:6px 10px;border:1px solid #ddd;'>{_h(story.get('relevance', ''))}</td>"
-            f"<td style='padding:6px 10px;border:1px solid #ddd;'>{_h(pub)}</td>"
-            f"</tr>"
-        )
+def build_alternates_section(parsed: dict) -> str:
+    alternates = parsed.get("alternates", [])
+    if not alternates:
+        return "<p>No alternates this week.</p>"
+    lines = []
+    for i, story in enumerate(alternates):
+        if i > 0:
+            lines.append("")
+        lines.append(_story_line(story))
     return (
-        "<table style='border-collapse:collapse;width:100%;font-size:13px;'>"
-        f"{header}{''.join(rows)}"
-        "</table>"
+        "<pre style='background:#f5f5f5;padding:15px;border-radius:5px;"
+        f"white-space:pre-wrap;font-family:monospace;'>{_h(chr(10).join(lines))}</pre>"
     )
 
 
@@ -216,22 +226,25 @@ def build_html_email(
     window_end: datetime,
 ) -> str:
     post_text = build_post_text(parsed)
-    source_table = build_source_table(parsed, articles)
+    alternates_html = build_alternates_section(parsed)
     period = f"{_fmt_date(window_start)} to {_fmt_date(window_end)}"
+    n_picked = len(parsed.get("picked", []))
+    n_alts = len(parsed.get("alternates", []))
     return f"""<h2>Sports D3c0d3d weekly LinkedIn digest</h2>
 <p><strong>Period:</strong> {_h(period)}<br>
-<strong>Articles included:</strong> {len(articles)}</p>
+<strong>Articles in window:</strong> {len(articles)} ({n_picked} picked, {n_alts} alternates)</p>
 
 <hr>
 
-<h3>LinkedIn post draft (copy-paste ready)</h3>
+<h3>LinkedIn post draft, top 5 stories (copy-paste ready)</h3>
 <p><em>Copy, edit as needed, and post to the Sports D3c0d3d LinkedIn page:</em></p>
 <pre style="background:#f5f5f5;padding:15px;border-radius:5px;white-space:pre-wrap;font-family:monospace;">{_h(post_text)}</pre>
 
 <hr>
 
-<h3>Source table for your reference</h3>
-{source_table}
+<h3>Swap-in candidates</h3>
+<p>If you want to substitute any of the five stories above, here are the others from this week in the same format. Replace any line in the post above with one of these.</p>
+{alternates_html}
 
 <hr>
 <p style="color:#888;font-size:12px;">Sent by Sports D3c0d3d weekly LinkedIn digest. Period: {_h(period)}.</p>"""
@@ -297,6 +310,12 @@ def run():
         status = send_email(html_body, subject)
         print(f"Email send status: {status}")
         return
+
+    picked = parsed.get("picked", [])
+    alternates = parsed.get("alternates", [])
+    print(f"Picked       : {len(picked)}")
+    print(f"Alternates   : {len(alternates)}")
+    print(f"Picked stories: {', '.join(s['headline'] for s in picked)}")
 
     post_text = build_post_text(parsed)
     print(f"Post length  : {len(post_text)} chars")

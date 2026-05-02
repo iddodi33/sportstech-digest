@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 29 April 2026*
+*Last updated: 2 May 2026*
 
 ---
 
@@ -11,6 +11,7 @@ A Python research and scraping pipeline that powers Sports D3c0d3d's intelligenc
 1. **News pipeline**: scrapes Irish sportstech news, scores articles with Claude Sonnet 4.5, emails alerts and a monthly research markdown, writes scored articles to the hub Supabase.
 2. **Jobs pipeline**: scrapes weekly job listings from 11 platforms (10 ATS + LinkedIn fallback), classifies via rule-based filters + Haiku 4.5, archives stale jobs, writes to the hub Supabase.
 3. **Events pipeline**: scrapes weekly events from 5 sources, extracts structured event data via Claude Sonnet 4.5, writes pending events to hub Supabase for admin review.
+4. **Weekly LinkedIn digest**: pulls score 3+ news items from the past 7 days from the hub Supabase, picks the top 5 with source and topic diversity, drafts a LinkedIn post for the Sports D3c0d3d company page with a hook opener and forward-looking close, emails the draft plus alternates as swap-in candidates. Read-only, no hub writes.
 
 Repo: `C:\coding_projects\sportstech-digest`
 GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
@@ -37,6 +38,7 @@ sportstech-digest/
 daily_monitor.py                    News: daily 9am UTC alert with LinkedIn drafts
 digest.py                           News: monthly 1st research markdown email
 news_pipeline.py                    News: RSS + direct scraping (62 Google News + 9 site RSS feeds + Supabase company queries)
+weekly_linkedin_digest.py           News-only weekly LinkedIn post draft, Friday 12:00 UTC
 enhanced_sportstech_job_scraper_v3.py    Legacy job CSV scraper
 supabase_client.py                  News: writes scored articles to hub Supabase
 jobs_pipeline/                      Weekly jobs scraper (Friday 06:00 UTC)
@@ -87,6 +89,7 @@ daily_monitor.yml                 News: daily 9am UTC cron
 monthly.yml                       News: monthly 1st cron
 jobs_weekly.yml                   Jobs: Friday 06:00 UTC cron
 events_weekly.yml                 Events: Friday 06:00 UTC cron
+weekly_linkedin_digest.yml        LinkedIn weekly digest, Friday 12:00 UTC cron
 
 ---
 
@@ -232,8 +235,9 @@ Hub project: xwqmnofkvdwpagfweqmj.
 | monthly.yml | 0 9 1 * * | Monthly research |
 | jobs_weekly.yml | 0 6 * * 5 | Jobs orchestrator |
 | events_weekly.yml | 0 6 * * 5 | Events orchestrator |
+| weekly_linkedin_digest.yml | 0 12 * * 5 (Friday 12:00 UTC) | Weekly LinkedIn post draft |
 
-All four also support workflow_dispatch for manual triggering.
+All five also support workflow_dispatch for manual triggering.
 
 ---
 
@@ -270,6 +274,9 @@ python events_pipeline/run_weekly_events.py
 python events_pipeline/run_weekly_events.py --skip-email
 python events_pipeline/run_weekly_events.py --skip-email --limit 5
 python events_pipeline/run_weekly_events.py --source meetup --skip-email
+
+# Weekly LinkedIn digest (news only, Friday 12:00 UTC)
+python weekly_linkedin_digest.py
 ```
 
 ---
@@ -284,6 +291,8 @@ python events_pipeline/run_weekly_events.py --source meetup --skip-email
 - The upsert_job RPC signature (10 args)
 - The upsert_news_item_if_higher_score RPC signature (12 args)
 - The upsert_event_if_new RPC signature (14 args)
+- The weekly_linkedin_digest.py picking rules (top 5 by score, source diversity hard constraint, topic diversity hard constraint)
+- The weekly LinkedIn post format: "Headline - relevance. read more-URL"
 
 ---
 
@@ -308,6 +317,21 @@ python events_pipeline/run_weekly_events.py --source meetup --skip-email
 ---
 
 ## Recent Changes Log
+
+### 2 May 2026, weekly LinkedIn digest
+
+- weekly_linkedin_digest.py created at repo root, news only, no jobs no events
+- .github/workflows/weekly_linkedin_digest.yml Friday 12:00 UTC cron
+- Pulls score 3+ news_items from hub Supabase across rolling 7-day window from run time
+- Picks top 5 stories using score descending + source diversity + topic diversity (hard constraints)
+- Source dedup is a hard constraint: if Sport for Business has two articles, only the higher-scored one is picked; the other goes to alternates regardless of merit
+- Remaining stories returned as swap-in candidates in the email below the post draft
+- Hook opener in stat-or-contrast register, forward-looking close, hashtags include #SportsTech and #Ireland plus 1 to 3 thematic
+- Post format: Headline - relevance. read more-URL
+- Email-only artefact, no hub writes
+- max_tokens 5000 (raised from 4000) to fit picked + alternates payload
+- Markdown fence stripping retained from earlier fix
+- Anti-hallucination rules from daily monitor LinkedIn drafts carried over verbatim (per-company capability facts for STATSports, Orreco, Output Sports, Kitman, Hexis, Danu, KinetikIQ)
 
 ### 29 April 2026, daily_monitor CC support
 
