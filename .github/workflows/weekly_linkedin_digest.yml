@@ -1,0 +1,30 @@
+name: Weekly LinkedIn Digest
+
+on:
+  schedule:
+    - cron: '0 12 * * 5'  # Friday 12:00 UTC
+  workflow_dispatch:        # allow manual trigger
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run weekly LinkedIn digest
+        run: python weekly_linkedin_digest.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALERT_FROM: monitor@sportsd3c0d3d.ie
+          ALERT_TO: iddodiamant@gmail.com
