@@ -79,14 +79,9 @@ def _fmt_date(dt: datetime) -> str:
 
 
 def compute_window() -> tuple[datetime, datetime]:
-    """Return (window_start, window_end): previous Saturday 00:00 UTC → today 11:59:59 UTC."""
-    now = datetime.now(timezone.utc)
-    today = now.date()
-    # Friday weekday=4: (4-5)%7 = 6 days back → last Saturday
-    days_back = (today.weekday() - 5) % 7
-    saturday = today - timedelta(days=days_back)
-    window_start = datetime(saturday.year, saturday.month, saturday.day, 0, 0, 0, tzinfo=timezone.utc)
-    window_end = datetime(today.year, today.month, today.day, 11, 59, 59, tzinfo=timezone.utc)
+    """Return (window_start, window_end): rolling 7-day look-back from run time."""
+    window_end = datetime.now(timezone.utc)
+    window_start = window_end - timedelta(days=7)
     return window_start, window_end
 
 
