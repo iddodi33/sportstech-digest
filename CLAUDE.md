@@ -181,7 +181,15 @@ Adapters: greenhouse, ashby, lever, personio, breezy, bamboohr, teamtailor, work
 
 LinkedIn adapter: Serper API replaces Google CSE (closed) and Bing API (retired Aug 2025). Free tier 2,500 queries/month, ~55/week used. Domain filter for FDI vs indigenous Irish.
 
-Classifier fields: seniority, employment_type, remote_status, vertical, location_normalised, sportstech_relevance, sportstech_relevance_reason, job_function (8 valid values + null), classification_reasoning.
+### Per-adapter summary extraction notes (4 May 2026)
+
+| Adapter | Extraction method | Notes |
+|---|---|---|
+| teamtailor | JSON:API `body` field (HTML stripped) when JSON:API accessible; per-job HTML detail page otherwise | Boylesports/Stats Perform CDN returns 406 for JSON:API → falls back to HTML. Stats Perform page is JS-rendered → 0 jobs from HTML fallback (known limitation). |
+| workday | JSON-LD `description` in per-job HTML detail page | List API (POST) has no description field. GET to detail endpoint returns 400. HTML page embeds JSON-LD. Adds N×0.3s per run (DraftKings: ~97 jobs). |
+| personio | JSON-LD `description` in per-job HTML detail page | `search.json` always returns empty `description` (server-side rendered). HTML page embeds JSON-LD. |
+
+Classifier fields: seniority, employment_type, remote_status, vertical, location_normalised, sportstech_relevance, sportstech_relevance_reason, job_function (8 valid values + null), classification_reasoning, summary_excerpt (string ≤400 chars or null).
 
 Archive sweep marks status='archived' if `last_seen_in_scrape_run` is older than `(source.last_successful_scrape_at - 8 days)` AND source health gate passes (source scraped successfully in past 8 days).
 
@@ -222,6 +230,7 @@ Hub project: xwqmnofkvdwpagfweqmj.
 ### Direct UPDATEs from this repo
 
 - `jobs.job_function` (set by classifier and reclassify-all script)
+- `jobs.summary_excerpt` (set by classifier; max 400 chars, null if Haiku can't extract)
 - `jobs.last_seen_in_scrape_run` (set by adapters after successful upsert)
 - `company_careers_sources.last_successful_scrape_at`, `last_scrape_run_at`
 
@@ -317,6 +326,32 @@ python weekly_linkedin_digest.py
 ---
 
 ## Recent Changes Log
+
+### 13 May 2026, daily email restructure
+
+- Removed LinkedIn draft generation from daily_monitor.py entirely (LINKEDIN_SYSTEM constant, generate_linkedin_post function, per-article LinkedIn block in email)
+- Added `relevance` field to scoring prompt: one sentence max 25 words, score 3 and 4 only, null for score 5 (Irish angle self-evident) and scores 1-2
+- BAD/GOOD examples for relevance inline in prompt, same pattern as summary field
+- New per-article email format: title as linked heading, metadata block (Score/Category/Source/Published/Reason), 2-sentence summary paragraph, "Relevance: ..." line (omitted when null), "Read the full article" link
+- `relevance` field is email-only — not persisted to Supabase, supabase_client.py unchanged, news_items schema unchanged
+- send_email() signature changed from (article, linkedin_post) to (article)
+
+### 4 May 2026, teamtailor/workday/personio summary extraction fixes
+
+**Root causes confirmed via live API inspection:**
+- **teamtailor**: Boylesports/Stats Perform CDN (section.io) blocks the JSON:API with 406. HTML fallback was hardcoding `summary=None`. Fix: HTML fallback now calls `_fetch_detail_text()` per job, which tries specific description selectors then falls back to `<main>`. Stats Perform remains 0 jobs (JS-rendered page, pre-existing limitation).
+- **workday**: List API (POST) contains no description field. Detail POST returns 400. Fix: fetch the public HTML job detail page, extract description from `<script type="application/ld+json">`. Adds ~0.3s per job to the scrape.
+- **personio**: `search.json` always returns empty `description` (server-side rendered). Fix: same JSON-LD extraction from HTML detail page.
+
+All three confirmed working via smoke tests. Re-run `python jobs_pipeline/run_teamtailor.py`, `run_workday.py`, `run_personio.py` to backfill summaries on approved jobs; then `run_classifier.py` to populate `summary_excerpt`.
+
+### 4 May 2026, classifier summary_excerpt field
+
+- `classifier.py`: added `summary_excerpt` to the Haiku prompt as a 10th output field. Instruction asks for 2-3 sentences describing what the role actually involves, skipping company intros and boilerplate. BAD/GOOD examples anchor quality. Max 400 characters, plain text, null if description is too thin.
+- `classifier.py`: `max_tokens` bumped from 1024 to 1224 (+200 headroom for excerpt output).
+- `run_classifier.py`: `summary_excerpt` extracted from Haiku response (capped at 400 chars), added to `shared_fields` dict so it is written via the existing `_update_job` helper alongside all other classifier fields.
+- RPC signature (`upsert_job`, 10 args) untouched. `summary_excerpt` writes via direct UPDATE, same pattern as `job_function`.
+- Hub: `jobs.summary_excerpt` column (text, nullable) already added. The hub detail page (`app/jobs/[id]/page.tsx`) already falls back gracefully when the field is null.
 
 ### 2 May 2026, weekly LinkedIn digest
 

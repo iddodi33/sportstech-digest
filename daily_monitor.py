@@ -349,6 +349,9 @@ Each item must have ALL of these keys:
   "summary": <Exactly 2 sentences, 40-60 words total. Sentence 1: what happened, who did it, where (include Irish angle if present). Sentence 2: why it matters, what it enables, or what context helps the reader understand significance. Never just restate the headline. Factual, Irish-ecosystem-builder voice, no hype, never starts with "Exciting news" or "Delighted".
   BAD (too short, just restates headline): "Output Sports launches HYROX365 Athlete Readiness Test."
   GOOD (gives context and why-it-matters): "Dublin-based Output Sports has partnered with HYROX365 to launch a standardised Athlete Readiness Test using its sensor platform to measure strength, endurance, and recovery benchmarks. The partnership extends Output's reach into mass-participation fitness testing across the global HYROX network.">
+  "relevance": <For score 3 and 4 only: one sentence, max 25 words, explaining why this specifically matters for the Irish sportstech ecosystem. Derive from the article content — do not invent context. For score 5, set to null (Irish angle is self-evident from the article). For score 1 and 2, set to null.
+  BAD (too generic): "This matters because it affects Irish sportstech companies."
+  GOOD (specific tie): "Enterprise Ireland's expanded HPSU programme directly accelerates capital access for early-stage Irish sportstech companies trying to avoid premature exits.">
   "tags": <list of 3-5 keyword strings: company names, themes, event types>
   "verticals": <list of 1-2 from: Performance Analytics | Wearables & Hardware | Fan Engagement | Media & Broadcasting | Health, Fitness and Wellbeing | Scouting & Recruitment | Esports & Gaming | Betting & Fantasy | Stadium & Event Tech | Club Management Software | Sports Education & Coaching | Other / Emerging>
   "mentioned_companies": <list of company names actually mentioned in the article>
@@ -390,6 +393,7 @@ JSON array:"""
                     article["category"]            = item.get("category", "Other")
                     article["reason"]              = item.get("score_reason", item.get("reason", ""))
                     article["summary"]             = item.get("summary",  "")
+                    article["relevance"]           = item.get("relevance")
                     article["tags"]                = item.get("tags",     [])
                     article["verticals"]           = item.get("verticals", [])
                     article["mentioned_companies"] = item.get("mentioned_companies", [])
@@ -403,119 +407,10 @@ JSON array:"""
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn post generation
-# ---------------------------------------------------------------------------
-
-LINKEDIN_SYSTEM = """You write LinkedIn posts for Iddo, an Irish sportstech newsletter editor \
-and ecosystem builder based in Dublin.
-
-His writing style:
-- Opens with a short punchy statement or observation — never a question, \
-never starts with "I", never uses "Exciting news" or "Delighted to share"
-- Short sentences, lots of white space, very scannable
-- Uses → arrow lists when listing multiple things
-- Always adds his own perspective or take — not just summarising, \
-but adding an insight about what this means for the Irish sportstech ecosystem
-- References Irish sportstech context where relevant
-- Tags relevant companies or people with [Company Name] or [Person Name] \
-as placeholders (we don't have LinkedIn URLs)
-- 3-5 hashtags at the end, always includes #SportsTech, plus relevant ones \
-from: #IrishSportsTech #SportsInnovation #Innovation #Entrepreneurship \
-#FanEngagement #SportsData #Wearables #Esports
-- Ends with a forward-looking or thought-provoking closer
-- Medium length: 150-250 words
-- Tone: insider, ecosystem builder, genuinely engaged, not corporate
-
-IRISH COMPANY REFERENCE RULES (strict — follow exactly):
-
-1. Only name an Irish sportstech company if it genuinely operates in the product \
-category relevant to this article. Do not pattern-match company names to story themes.
-
-2. Before naming any Irish company, verify:
-   - What does this company actually make or do?
-   - Is that directly relevant to the article's specific topic?
-   If you are not certain the company's actual product fits, do not name it.
-
-3. If no Irish company genuinely fits the story, write the post WITHOUT naming one. \
-A good post with no Irish company reference is better than one that misattributes \
-capabilities to a real company.
-
-4. Do not invent capabilities. Known facts only:
-   - STATSports: GPS performance trackers (not concussion tech, not other hardware)
-   - Orreco: biomarker analytics and recovery (not hardware, not head impact sensors)
-   - Output Sports: movement assessment via IMU (not concussion, not GPS team tracking)
-   - Kitman Labs: athlete management software (not hardware)
-   - Hexis: nutrition software (not hardware, not performance tracking)
-   - Danu Sports: smart textiles for running biomechanics (not team sports, not concussion)
-
-5. For categories where no Irish company has a genuine product (e.g. concussion \
-hardware, smart mouthguards, helmet sensors), reference the category as an \
-opportunity or white space for Irish sportstech — do not claim an Irish company \
-already leads it.
-
-6. Individual Irish people in senior roles at international bodies (e.g. Éanna Falvey \
-as World Rugby CMO) can be referenced factually if relevant, but do not conflate \
-an Irish person's role with an Irish company operating in that space.
-
-Example of his style:
-"Ireland just proved it's Europe's #1 SportsTech hub per capita.
-
-Sony acquired STATSports. Irish companies raised €25M+. AI went from \
-lab to stadium.
-
-This isn't luck. It's a decade of quiet, determined building.
-
-→ Concussion detection wearables
-→ Haptic devices for blind fans
-→ Performance analytics in the Premier League, NBA, AFL
-
-Irish innovation is powering elite sport worldwide.
-
-The question isn't whether Ireland belongs at the top table.
-It's how we make sure the next generation knows it's possible.
-
-Link in comments 👇
-
-#IrishSportsTech #SportsTech #SportsInnovation"
-"""
-
-
-def generate_linkedin_post(article: dict) -> str:
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
-    user = (
-        f"Write a LinkedIn post for Iddo about this article.\n"
-        f"Add his perspective on what it means for Irish sportstech.\n\n"
-        f"Article title: {article.get('title', '')}\n"
-        f"Source: {article.get('source', '')}\n"
-        f"Summary: {article.get('summary', '')}\n"
-        f"Score: {article.get('score', '')}/5\n"
-        f"Category: {article.get('category', '')}\n"
-        f"URL: {article.get('link', '')}\n\n"
-        f"End the post with \"Link in comments 👇\" on its own line,\n"
-        f"then the URL on the next line,\n"
-        f"then the hashtags."
-    )
-
-    try:
-        response = _call_claude_with_retry(
-            client,
-            model=MODEL,
-            max_tokens=600,
-            system=LINKEDIN_SYSTEM,
-            messages=[{"role": "user", "content": user}],
-        )
-        return response.content[0].text.strip()
-    except Exception as exc:
-        log.error("LinkedIn post generation failed for '%s': %s", article.get("title", ""), exc)
-        return f"[LinkedIn post generation failed: {exc}]"
-
-
-# ---------------------------------------------------------------------------
 # Email sending via SendGrid
 # ---------------------------------------------------------------------------
 
-def send_email(article: dict, linkedin_post: str) -> bool:
+def send_email(article: dict) -> bool:
     sg_key     = os.getenv("SENDGRID_API_KEY")
     alert_from = os.getenv("ALERT_FROM")
     alert_to   = os.getenv("ALERT_TO")
@@ -530,23 +425,34 @@ def send_email(article: dict, linkedin_post: str) -> bool:
     source      = article.get("source",           "")
     pub_date    = article.get("pubDate",          "")[:10]
     reason      = article.get("reason",           "")
+    summary     = article.get("summary",          "")
+    relevance   = article.get("relevance")
     url         = article.get("link",             "")
     is_fallback = article.get("link_is_fallback", False)
 
     subject = f"⚡ [Score {score}/5] {title}"
 
-    # Escape for HTML
     def _h(s): return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    lp_html = _h(linkedin_post).replace("\n", "<br>")
+
+    title_html = (
+        f'<h2 style="color:#e65c00;">⚠️ {_h(title)}</h2>'
+        f'<p><em>Direct link unavailable — search link provided instead</em></p>'
+        if is_fallback else
+        f'<h2><a href="{url}" style="color:#1a0dab;">{_h(title)}</a></h2>'
+    )
 
     link_html = (
-        f'<p style="color:#e65c00;">⚠️ Direct link unavailable — search link provided instead</p>'
         f'<p><a href="{url}">Search Google for this article →</a></p>'
         if is_fallback else
         f'<p><a href="{url}">Read the full article →</a></p>'
     )
 
-    html_body = f"""<h2>New Irish SportsTech Alert</h2>
+    relevance_html = (
+        f'<p><strong>Relevance:</strong> {_h(relevance)}</p>'
+        if relevance else ""
+    )
+
+    html_body = f"""{title_html}
 
 <p><strong>Score:</strong> {score}/5<br>
 <strong>Category:</strong> {_h(category)}<br>
@@ -554,19 +460,13 @@ def send_email(article: dict, linkedin_post: str) -> bool:
 <strong>Published:</strong> {pub_date}<br>
 <strong>Reason:</strong> {_h(reason)}</p>
 
+<p>{_h(summary)}</p>
+
+{relevance_html}
 {link_html}
 
 <hr>
-
-<h3>LinkedIn Post Draft</h3>
-<p><em>Copy, edit as needed, and post:</em></p>
-<pre style="background:#f5f5f5;padding:15px;border-radius:5px;white-space:pre-wrap;">{lp_html}</pre>
-
-<hr>
-<p style="color:#888;font-size:12px;">
-Sent by Sports D3c0d3d daily monitor.
-Article scored {score}/5 for Irish sportstech relevance.
-</p>"""
+<p style="color:#888;font-size:12px;">Sent by Sports D3c0d3d daily monitor. Article scored {score}/5 for Irish sportstech relevance.</p>"""
 
     message = Mail(
         from_email=alert_from,
@@ -730,19 +630,16 @@ def run():
             log.warning("Supabase upsert failed: %s", article.get("title", "")[:80])
     log.info("Supabase: upserted %d/%d items to hub", hub_upsert_count, len(new_articles))
 
-    # 4. Generate posts + send emails
+    # 4. Send emails
     sent_count = 0
     for article in new_articles:
         title = article.get("title", "")
-        log.info("Generating LinkedIn post for: %s", title[:80])
-        linkedin_post = generate_linkedin_post(article)
-
-        if send_email(article, linkedin_post):
+        if send_email(article):
             seen.add(article["link"])
             sent_count += 1
             log.info("Email sent: [Score %s] %s", article.get("score"), title[:80])
         else:
-            unsent.append({**article, "linkedin_post": linkedin_post})
+            unsent.append(article)
             log.warning("Email failed — queued for unsent log: %s", title[:80])
 
     # 5. Persist seen list
