@@ -36,12 +36,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from .base import BaseAdapter
-from ..supabase_jobs_client import get_client, upsert_job
+from ..supabase_jobs_client import get_client, mark_job_seen, upsert_job
 
 log = logging.getLogger(__name__)
 
 _SERPER_URL = "https://google.serper.dev/search"
 _SUMMARY_MAX = 1500
+MAX_POSTED_AGE_DAYS = 90
 
 _USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -196,6 +197,55 @@ def _names_match(norm_source: str, norm_linkedin: str) -> bool:
     s1 = norm_source[:-1] if norm_source.endswith("s") else norm_source
     s2 = norm_linkedin[:-1] if norm_linkedin.endswith("s") else norm_linkedin
     return s1 == s2 and s1 != ""
+
+
+def _extract_posted_days_ago(html: str) -> int | None:
+    """Return how many days ago a LinkedIn job was posted, or None if undetermined.
+
+    Method 1 — JSON-LD datePosted (preferred: precise ISO timestamp).
+    Method 2 — regex on relative human timestamps ("Posted 3 weeks ago", etc.).
+    Returns None if neither method finds a usable date; callers treat None as
+    unknown and should allow the job rather than reject on missing data.
+    """
+    # Method 1: JSON-LD
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all("script", type="application/ld+json"):
+        if not tag.string:
+            continue
+        try:
+            data = json.loads(tag.string)
+            if data.get("@type") == "JobPosting":
+                date_posted = data.get("datePosted")
+                if date_posted:
+                    posted_dt = datetime.fromisoformat(
+                        date_posted.replace("Z", "+00:00")
+                    )
+                    return (datetime.now(timezone.utc) - posted_dt).days
+        except Exception:
+            continue
+
+    # Method 2: relative timestamp regex
+    # Matches "Posted 3 weeks ago" and "Reposted 5 days ago" etc.
+    m = re.search(
+        r"(?:Posted|Reposted)\s+(\d+)\s+(hour|day|week|month|year)s?\s+ago",
+        html,
+        re.IGNORECASE,
+    )
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2).lower()
+        if unit == "hour":
+            return 0
+        if unit == "day":
+            return n
+        if unit == "week":
+            return n * 7
+        if unit == "month":
+            return n * 30
+        if unit == "year":
+            return n * 365
+
+    return None
 
 
 # ── Adapter ───────────────────────────────────────────────────────────────────
@@ -575,7 +625,7 @@ class LinkedInAdapter(BaseAdapter):
         audit["rejections"].extend(domain_rejections)
 
         # Stage 3 + 4: Fetch, parse, validate
-        failed_999 = failed_http = failed_parse = failed_name = 0
+        failed_999 = failed_http = failed_parse = failed_name = failed_stale = 0
         n_bypassed = 0
         jobs: list[dict] = []
 
@@ -609,6 +659,18 @@ class LinkedInAdapter(BaseAdapter):
                 audit["rejections"].append((url, outcome))
                 continue
 
+            # Posted-age check
+            days_ago = _extract_posted_days_ago(result)
+            if days_ago is None:
+                log.warning("linkedin: could not extract posted date for %s — allowing", url)
+            elif days_ago > MAX_POSTED_AGE_DAYS:
+                log.info(
+                    "linkedin: REJECT %s — posted_too_old (%d days)", url, days_ago
+                )
+                failed_stale += 1
+                audit["rejections"].append((url, f"posted_too_old ({days_ago}d)"))
+                continue
+
             jobs.append(parsed)
             audit["validated"] += 1
             if outcome == "bypassed":
@@ -619,7 +681,7 @@ class LinkedInAdapter(BaseAdapter):
 
         log.info(
             "linkedin: '%s' serper=%d domain_filter=%d fetched=%d validated=%d "
-            "errors: 999=%d parse=%d name_mismatch=%d bypassed=%d",
+            "errors: 999=%d parse=%d name_mismatch=%d stale_age=%d bypassed=%d",
             company_name,
             audit["serper_count"],
             audit["domain_accepted"],
@@ -628,6 +690,7 @@ class LinkedInAdapter(BaseAdapter):
             failed_999,
             failed_parse,
             failed_name,
+            failed_stale,
             n_bypassed,
         )
 
@@ -643,6 +706,7 @@ class LinkedInAdapter(BaseAdapter):
         _SerperNoResultsError
             → update source error, return stats (does NOT abort)
         """
+        run_started_at = datetime.now(timezone.utc)
         source_name = source.get("company_name") or source.get("id", "unknown")
         stats = {
             "source_name": source_name,
@@ -712,12 +776,16 @@ class LinkedInAdapter(BaseAdapter):
                 )
                 if not result:
                     stats["errors"] += 1
-                elif result.get("was_inserted"):
-                    stats["inserted"] += 1
-                elif result.get("was_reactivated"):
-                    stats["reactivated"] += 1
                 else:
-                    stats["updated"] += 1
+                    job_id = result.get("id")
+                    if job_id:
+                        mark_job_seen(job_id, run_started_at)
+                    if result.get("was_inserted"):
+                        stats["inserted"] += 1
+                    elif result.get("was_reactivated"):
+                        stats["reactivated"] += 1
+                    else:
+                        stats["updated"] += 1
             except Exception as exc:
                 log.error("linkedin: upsert_job failed for '%s': %s", url[:80], exc)
                 stats["errors"] += 1

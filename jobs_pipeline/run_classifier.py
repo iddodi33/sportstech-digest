@@ -51,7 +51,7 @@ def _fetch_companies(client, company_ids: list[str]) -> dict[str, dict]:
         batch = company_ids[i : i + 50]
         rows = (
             client.table("companies")
-            .select("id, name, vertical, is_fdi, is_irish_founded, description")
+            .select("id, name, vertical, is_fdi, is_irish_founded, fdi_classifier_allowlisted, description")
             .in_("id", batch)
             .execute()
         ).data
@@ -152,6 +152,13 @@ def main():
         # Store raw Haiku output in classification JSON (pre-normalisation)
         classification = build_classification_record(haiku_raw, rules_result)
 
+        excerpt_raw = haiku.get("summary_excerpt")
+        summary_excerpt = (
+            excerpt_raw.strip()[:400]
+            if isinstance(excerpt_raw, str) and excerpt_raw.strip()
+            else None
+        )
+
         shared_fields = {
             "classification": classification,
             "seniority": haiku.get("seniority"),
@@ -160,6 +167,7 @@ def main():
             "vertical": haiku.get("vertical"),
             "location_normalised": haiku.get("location_normalised"),
             "job_function": haiku.get("job_function"),
+            "summary_excerpt": summary_excerpt,
         }
 
         if is_not_sportstech:

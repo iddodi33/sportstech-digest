@@ -53,11 +53,18 @@ def fmt_runtime(seconds: float) -> str:
 
 
 def _aggregate(platform: str, per_source: list[dict], runtime: float, error: Exception | None = None) -> dict:
+    scraped = sum(s.get("jobs_found", 0) for s in per_source)
+    if error:
+        status = "failed"
+    elif scraped == 0:
+        status = "warning"
+    else:
+        status = "success"
     return {
         "step_name": platform,
-        "status": "failed" if error else "success",
+        "status": status,
         "runtime_seconds": runtime,
-        "jobs_scraped": sum(s.get("jobs_found", 0) for s in per_source),
+        "jobs_scraped": scraped,
         "jobs_new": sum(s.get("inserted", 0) for s in per_source),
         "jobs_updated": sum(s.get("updated", 0) + s.get("reactivated", 0) for s in per_source),
         "companies_processed": len(per_source),

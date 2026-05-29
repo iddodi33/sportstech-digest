@@ -18,6 +18,8 @@ def _status_cell(status: str) -> str:
         return '<td style="padding:4px 10px;color:#cc0000;font-weight:bold;">FAILED</td>'
     if status == "credit_exhausted":
         return '<td style="padding:4px 10px;color:#b85c00;font-weight:bold;">CREDIT EXHAUSTED</td>'
+    if status == "warning":
+        return '<td style="padding:4px 10px;color:#b85c00;font-weight:bold;">warning (0 jobs)</td>'
     return '<td style="padding:4px 10px;color:#2a7a2a;">success</td>'
 
 

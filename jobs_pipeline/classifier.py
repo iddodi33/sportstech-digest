@@ -16,7 +16,6 @@ _JUNIOR_KEYWORDS = [
     "junior",
     "intern",
     "internship",
-    "graduate",
     "entry level",
     "entry-level",
     "trainee",
@@ -138,6 +137,125 @@ def _check_fdi_geography(location_raw: str | None) -> str:
     return "pending"
 
 
+# ── FDI geography (allowlisted companies — Ireland + UK eligible) ─────────────
+# Same structure as _check_fdi_geography but:
+#   - UK cities and country markers are eligible alongside Ireland (allowlisted
+#     companies such as Flutter/DraftKings have genuine Dublin and London offices).
+#   - Multi-location strings ("Multiple Locations", "6 Locations") return 'pending'
+#     rather than auto-reject — admin reviews whether a Dublin/London option exists.
+
+_IRELAND_UK_ELIGIBLE = [
+    # Republic of Ireland — cities / counties
+    "dublin", "cork", "galway", "limerick", "waterford",
+    "kilkenny", "ireland", "irish", ", ie", "co. ",
+    "skerries", "skibbereen", "navan", "swords", "castlebar", "carlow",
+    "cavan", "sixmilebridge", "sandyford", "castleknock", "killarney",
+    "donegal", "dundalk", "enniscorthy", "louth", "ennis", "scarriff",
+    # Northern Ireland
+    "belfast", "newry", "derry", "londonderry", "antrim", "northern ireland",
+    # Great Britain — cities
+    "london", "leeds", "manchester", "birmingham", "edinburgh", "glasgow",
+    "bristol", "sheffield", "liverpool", "newcastle", "cardiff",
+    # Great Britain — country markers
+    "uk", "united kingdom", "england", "scotland", "wales",
+    # Remote with UK/European/EMEA scope
+    "remote - uk", "remote - emea", "remote - europe", "remote - eu",
+    "remote emea", "remote europe",
+]
+
+_GEOGRAPHY_REJECTS_ALLOWLISTED = [
+    # Remote scoped to regions that exclude Ireland and UK
+    "remote - us", "remote - usa", "remote - canada", "remote - latam",
+    "remote - apac", "remote - anz", "remote - ukraine",
+    "remote - bulgaria", "remote ca",
+    # US country markers
+    "united states", ", usa",
+    # US state abbreviations (comma-space prefix to avoid false matches)
+    ", ma", ", ny", ", ca", ", tx", ", wa", ", il", ", ne", ", nc",
+    ", fl", ", ga", ", oh", ", pa", ", nj", ", az", ", or", ", id",
+    ", nh", ", wv", ", nv", ", me", ", ky", ", tn", ", mn", ", mo",
+    ", va", ", md", ", sc", ", la", ", al", ", co",
+    # Major US cities
+    "boston", "los angeles", "new york", "san francisco", "chicago",
+    "seattle", "austin", "nashville", "denver", "atlanta", "raleigh",
+    "las vegas", "pueblo", "boise", "tempe", "portland", "sacramento",
+    "bakersfield", "chico", "oroville", "susanville", "richvale",
+    "redding", "jackson, c", "tracy, c", "eureka, c", "noblesville",
+    "lincoln, ne", "omaha", "mercer island", "redwood city",
+    "miami", "dallas", "kansas city", "north andover",
+    "newburgh", "nashua", "north berwick", "white hall", "reynoldsburg",
+    # Strava's non-Ireland/UK custom location names
+    "strava sf", "strava berlin", "strava paris",
+    # Continental Europe (non-Ireland/UK)
+    "sofia", "plovdiv", "tel aviv", "barcelona", "berlin", "paris",
+    "amsterdam", "madrid", "tallinn", "estonia", "belgium",
+    "netherlands", "den bosch", "chiavari",
+    # Asia Pacific
+    "singapore", "shanghai", "guangzhou", "beijing", "tokyo", "japan",
+    "korea", "seoul", "india", "mumbai", "jakarta", "indonesia",
+    "philippines", "manila", "sydney", "melbourne", "australia",
+    # Americas (non-US)
+    "canada", "colombia",
+    # Middle East / Africa / Other
+    "doha", "dubai", "abu dhabi", "ukraine", "bulgaria",
+]
+
+
+def _check_fdi_geography_allowlisted(location_raw: str | None, url: str | None = None) -> str:
+    """Return 'pass', 'reject', or 'pending' for an allowlisted FDI company's location.
+
+    Differs from _check_fdi_geography in two ways:
+    - UK cities and country markers are eligible alongside Ireland.
+    - Multi-location strings ("Multiple Locations", "6 Locations") attempt a URL
+      fallback (Workday /job/{Office-CC}/ path) before returning 'pending', so
+      admin only reviews jobs that genuinely cannot be resolved from the URL.
+    """
+    if not location_raw:
+        return "pending"
+    loc = location_raw.lower()
+
+    # Ireland + UK eligible: check first
+    if any(marker in loc for marker in _IRELAND_UK_ELIGIBLE):
+        return "pass"
+
+    # Ambiguous multi-location patterns — try URL fallback before giving up
+    if _N_LOCATIONS_RE.search(location_raw) or any(pattern in loc for pattern in _AMBIGUOUS_LOC):
+        workday_office_match = re.search(r'/job/([^/]+)/', url) if url else None
+        if workday_office_match:
+            office = workday_office_match.group(1).lower().replace('-', ' ').replace('---', ' ')
+            if any(marker in office for marker in [
+                'ireland', ' ie', '-ie', 'dublin', 'limerick', 'cork', 'galway',
+                'belfast', 'waterford', 'kilkenny', 'derry', 'londonderry',
+            ]):
+                return "pass"
+            if any(marker in office for marker in [
+                ' uk', '-uk', 'united kingdom', 'england', 'scotland', 'wales',
+                'london', 'leeds', 'manchester', 'birmingham', 'edinburgh', 'glasgow',
+                'bristol', 'sheffield', 'liverpool', 'newcastle', 'cardiff',
+            ]):
+                return "pass"
+            if any(marker in office for marker in [
+                ' ma', ' ny', ' ca', ' tx', ' fl', ' wa', ' il', ' nv', ' co',
+                ' az', ' nc', ' ne', ' id', ' ut', ' oh', ' mi', ' pa', ' ga',
+                ' va', ' md', ' or', ' wi', ' mn', ' mo', ' in', ' tn', ' ky',
+                'boston', 'chicago', 'austin', 'new york', 'los angeles',
+                'san francisco', 'denver', 'remote bulgaria', 'sofia', 'plovdiv',
+                ' bg', 'china', 'shanghai', 'guangzhou', 'singapore', 'korea',
+                'seoul', 'jakarta', 'sydney', 'doha', 'qatar', 'dubai', 'spain',
+                'barcelona', 'madrid', 'germany', 'berlin', 'belgium', 'netherlands',
+                'colombia', 'medellin', 'gibraltar', 'usa',
+            ]):
+                return "reject"
+        return "pending"
+
+    # Definitive non-Ireland/UK
+    if any(reject in loc for reject in _GEOGRAPHY_REJECTS_ALLOWLISTED):
+        return "reject"
+
+    # Unknown — safe default is pending, not reject
+    return "pending"
+
+
 # ── Haiku classification ──────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = (
@@ -178,7 +296,7 @@ def _build_user_prompt(job: dict, company: dict) -> str:
         f"JOB_SUMMARY: {(job.get('summary') or '')[:1500]}\n\n"
         "Return JSON with exactly these fields: seniority, employment_type, remote_status, "
         "vertical, location_normalised, sportstech_relevance, sportstech_relevance_reason, "
-        "job_function, classification_reasoning.\n\n"
+        "job_function, classification_reasoning, summary_excerpt.\n\n"
         "Use null for any field that can't be determined confidently.\n\n"
         "Seniority mapping:\n"
         "- mid: 2-5 yrs, Engineer, Analyst, Specialist, Consultant, Associate (no senior modifier)\n"
@@ -208,7 +326,17 @@ def _build_user_prompt(job: dict, company: dict) -> str:
         "Other (anything that genuinely doesn't fit — legal counsel, executive roles, niche specialists), "
         "or null if you genuinely cannot determine the function from the job title and summary. "
         "Do not default to Other — only use it for explicit cross-functional or hard-to-categorise roles. "
-        "Use null when truly unsure."
+        "Use null when truly unsure.\n\n"
+        "summary_excerpt: a clean 2-3 sentence description of what THE ROLE involves — what the "
+        "person will actually do day-to-day. Skip company introductions ('who we are', 'our mission'), "
+        "administrative metadata (salary, contract length, location), and recruiter boilerplate. "
+        "Lead with the actual work. If the description is too short or messy to extract a clean "
+        "excerpt, return null. Maximum 400 characters. Plain text, no markdown, no labels.\n"
+        "Examples:\n"
+        "  BAD: 'Clubforce has transformed the way sports clubs are managed since 2009...'\n"
+        "  GOOD: 'Build and maintain backend services for the Clubforce platform. Work across "
+        "membership management, payments, and club operations features. Collaborate with the "
+        "product team to ship new functionality and own service reliability.'"
     )
 
 
@@ -237,13 +365,16 @@ def run_rules(job: dict, company: dict) -> dict:
     # Rule 2: FDI geography — only for pure FDIs with no Irish founding
     is_fdi = bool(company.get("is_fdi"))
     is_irish_founded = bool(company.get("is_irish_founded"))
+    is_fdi_allowlisted = bool(company.get("fdi_classifier_allowlisted"))
 
     if is_fdi and not is_irish_founded:
-        geo = _check_fdi_geography(job.get("location_raw"))
+        if is_fdi_allowlisted:
+            geo = _check_fdi_geography_allowlisted(job.get("location_raw"), job.get("url"))
+        else:
+            geo = _check_fdi_geography(job.get("location_raw"))
         if geo == "reject":
             rules["fdi_geography_reject"] = True
             return {"rejected": True, "reason": "fdi_geography", "rules": rules, "geo_check": geo}
-        # "pass" or "pending" both continue to Haiku
         return {"rejected": False, "reason": None, "rules": rules, "geo_check": geo}
 
     return {"rejected": False, "reason": None, "rules": rules, "geo_check": "n/a"}
@@ -258,7 +389,7 @@ def classify_with_haiku(job: dict, company: dict, anthropic_client) -> dict:
     prompt = _build_user_prompt(job, company)
     msg = anthropic_client.messages.create(
         model=MODEL,
-        max_tokens=1024,
+        max_tokens=1224,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -349,6 +480,7 @@ def _norm_job_function(value: str | None) -> str | None:
     if value is None:
         return None
     v = str(value).strip()
+    v = re.sub(r'\s*\([^)]*\)\s*$', '', v).strip()
     if v in _JOB_FUNCTION_VALID:
         return v
     if v.lower() in _JOB_FUNCTION_NULL_LITERALS:
