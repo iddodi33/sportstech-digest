@@ -22,9 +22,14 @@ Country UUIDs for reference if a future tenant does support locationCountry:
     United States:  bc33aa3152ec42d4995f4791a1a0c4b9
 """
 
+import html as html_module
+import json
 import logging
+import re
+import time
 
 import requests
+from bs4 import BeautifulSoup
 
 from .base import BaseAdapter
 
@@ -42,8 +47,55 @@ _HEADERS = {
     "User-Agent": _USER_AGENT,
 }
 
-_PAGE_SIZE = 20
-_MAX_PAGES = 10
+_PAGE_SIZE    = 20
+_MAX_PAGES    = 10
+_DETAIL_MAX   = 1500
+_DETAIL_SLEEP = 0.3
+
+
+def _strip_html(raw: str) -> str:
+    """Strip HTML tags and collapse whitespace, capped at _DETAIL_MAX chars."""
+    if not raw:
+        return ""
+    try:
+        unescaped = html_module.unescape(raw)
+        soup = BeautifulSoup(unescaped, "html.parser")
+        text = soup.get_text(separator=" ")
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:_DETAIL_MAX]
+    except Exception:
+        return raw[:_DETAIL_MAX]
+
+
+def _fetch_detail_description(url: str) -> str | None:
+    """Fetch a Workday job detail HTML page and extract description from JSON-LD.
+
+    The Workday list API (POST /wday/cxs/.../jobs) does not include description
+    in its response. The public HTML job page embeds a JSON-LD block with a
+    'description' field containing the full HTML job description.
+    """
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": _USER_AGENT, "Accept": "text/html"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        log.debug("Workday detail fetch failed for %s: %s", url[:80], exc)
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            ld = json.loads(script.string or "")
+            desc = ld.get("description") or ""
+            if desc:
+                return _strip_html(desc) or None
+        except Exception:
+            continue
+
+    return None
 
 
 class WorkdayAdapter(BaseAdapter):
@@ -62,6 +114,11 @@ class WorkdayAdapter(BaseAdapter):
         Derives the endpoint URL from the source's workday_tenant, workday_pod,
         and workday_site fields. Raises ValueError if any are missing.
         Raises requests.HTTPError on 403/429/5xx.
+
+        Description extraction: the list API does not include descriptions.
+        A separate GET to each job's public HTML page extracts description
+        from the embedded JSON-LD <script type="application/ld+json">.
+        This adds one HTTP request per posting; throttled by _DETAIL_SLEEP.
         """
         tenant = source.get("workday_tenant")
         pod = source.get("workday_pod")
@@ -120,11 +177,14 @@ class WorkdayAdapter(BaseAdapter):
             ext_path = p.get("externalPath") or ""
             url = f"{base_url}{ext_path}"
 
+            summary = _fetch_detail_description(url)
+            time.sleep(_DETAIL_SLEEP)
+
             jobs.append({
                 "url": url,
                 "title": (p.get("title") or "").strip(),
                 "location_raw": p.get("locationsText") or None,
-                "summary": None,
+                "summary": summary,
                 "salary_range": None,
             })
 

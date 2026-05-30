@@ -1,9 +1,13 @@
 """personio.py — Personio ATS adapter."""
 
+import html as html_module
+import json
 import logging
 import re
+import time
 
 import requests
+from bs4 import BeautifulSoup
 
 from .base import BaseAdapter
 
@@ -15,11 +19,58 @@ _USER_AGENT = (
     "Chrome/124.0.0.0 Safari/537.36"
 )
 
-_SUMMARY_MAX = 2000
+_SUMMARY_MAX  = 2000   # kept for the (currently always empty) list field
+_DETAIL_MAX   = 1500
+_DETAIL_SLEEP = 0.3
 
 # Extract subdomain slug from endpoint URL, e.g. "output-sports" from
 # "https://output-sports.jobs.personio.com/search.json"
 _SLUG_RE = re.compile(r"https?://([^.]+)\.jobs\.personio\.")
+
+
+def _strip_html(raw: str) -> str:
+    """Strip HTML tags and collapse whitespace, capped at _DETAIL_MAX chars."""
+    if not raw:
+        return ""
+    try:
+        unescaped = html_module.unescape(raw)
+        soup = BeautifulSoup(unescaped, "html.parser")
+        text = soup.get_text(separator=" ")
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:_DETAIL_MAX]
+    except Exception:
+        return raw[:_DETAIL_MAX]
+
+
+def _fetch_detail_description(url: str) -> str | None:
+    """Fetch a Personio job detail page and extract description from JSON-LD.
+
+    The search.json endpoint always returns an empty 'description' field —
+    descriptions are rendered server-side. The HTML job detail page embeds
+    a JSON-LD block with a 'description' field containing the full HTML description.
+    """
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": _USER_AGENT},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        log.debug("Personio detail fetch failed for %s: %s", url[:80], exc)
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            ld = json.loads(script.string or "")
+            desc = ld.get("description") or ""
+            if desc:
+                return _strip_html(desc) or None
+        except Exception:
+            continue
+
+    return None
 
 
 def _slug_from_endpoint(endpoint: str) -> str:
@@ -74,10 +125,10 @@ class PersonioAdapter(BaseAdapter):
             job_id = j.get("id")
             url = f"https://{slug}.jobs.personio.com/job/{job_id}"
 
-            # search.json returns description as a plain string that is empty
-            # for most boards (descriptions are rendered server-side only)
-            description = (j.get("description") or "").strip()
-            summary = description[:_SUMMARY_MAX] or None
+            # search.json 'description' is always empty (server-side rendered).
+            # Fetch the HTML detail page to get description from JSON-LD.
+            summary = _fetch_detail_description(url)
+            time.sleep(_DETAIL_SLEEP)
 
             jobs.append({
                 "url": url,

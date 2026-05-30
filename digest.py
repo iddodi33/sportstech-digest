@@ -1,4 +1,4 @@
-"""
+﻿"""
 digest.py
 Reads news_raw_YYYY-MM.json and the most recent sportstech_jobs_ireland.csv,
 calls Claude to score and categorise articles, then writes research/YYYY-MM-research.md.
@@ -18,10 +18,7 @@ import anthropic
 import pandas as pd
 from dotenv import load_dotenv
 from supabase_client import build_news_item, upsert_news_item
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import (
-    Attachment, Disposition, FileContent, FileName, FileType, Mail,
-)
+from email_client import send_email as _send_email
 
 load_dotenv()
 
@@ -449,24 +446,10 @@ def build_markdown(
 
 
 def email_research_digest(output_path: str, month: str) -> None:
-    sg_key     = os.getenv("SENDGRID_API_KEY")
-    alert_from = os.getenv("ALERT_FROM")
-    alert_to   = os.getenv("ALERT_TO")
-
-    if not sg_key or not alert_from or not alert_to:
-        log.warning("SendGrid env vars not set — skipping research email.")
-        return
-
     with open(output_path, encoding="utf-8") as f:
         md_content = f.read()
 
     encoded = base64.b64encode(md_content.encode("utf-8")).decode()
-    attachment = Attachment(
-        FileContent(encoded),
-        FileName(f"{month}-research.md"),
-        FileType("text/markdown"),
-        Disposition("attachment"),
-    )
 
     html_body = (
         "<p>Here is this month's research digest. "
@@ -474,23 +457,13 @@ def email_research_digest(output_path: str, month: str) -> None:
         f"<p>Attached: <strong>{month}-research.md</strong></p>"
     )
 
-    message = Mail(
-        from_email=alert_from,
-        to_emails=alert_to,
-        subject=f"Sports D3c0d3d Monthly Research \u2014 {month}",
-        html_content=html_body,
+    subject = f"Sports D3c0d3d Monthly Research — {month}"
+    status = _send_email(
+        subject,
+        html_body,
+        attachments=[{"filename": f"{month}-research.md", "content": encoded}],
     )
-    message.attachment = attachment
-
-    try:
-        sg = SendGridAPIClient(sg_key)
-        response = sg.send(message)
-        log.info("Research email sent: status=%s", response.status_code)
-        if response.status_code >= 400:
-            log.error("SendGrid returned error status %s: %s", response.status_code, response.body)
-    except Exception as exc:
-        log.error("Failed to send research email: %s", exc)
-
+    log.info("Research email sent: status=%s", status)
 
 def run():
     month = datetime.now().strftime("%Y-%m")

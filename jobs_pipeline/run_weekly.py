@@ -47,7 +47,7 @@ _REPO_ROOT    = os.path.dirname(_PIPELINE_DIR)
 
 _REQUIRED_ENV = [
     "ANTHROPIC_API_KEY",
-    "SENDGRID_API_KEY",
+    "RESEND_API_KEY",
     "ALERT_FROM",
     "ALERT_TO",
     "NEXT_PUBLIC_SUPABASE_URL",

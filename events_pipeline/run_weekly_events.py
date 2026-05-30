@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 _REQUIRED_ENV = [
     "ANTHROPIC_API_KEY",
-    "SENDGRID_API_KEY",
+    "RESEND_API_KEY",
     "NEXT_PUBLIC_SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
 ]

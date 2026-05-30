@@ -12,8 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import anthropic
 from dotenv import load_dotenv
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+from email_client import send_email as _resend_send
 from supabase import create_client
 
 load_dotenv()
@@ -250,30 +249,9 @@ def build_html_email(
 <p style="color:#888;font-size:12px;">Sent by Sports D3c0d3d weekly LinkedIn digest. Period: {_h(period)}.</p>"""
 
 
-def send_email(html_body: str, subject: str) -> int | None:
-    """Send email via SendGrid. Returns HTTP status code, or None on exception."""
-    sg_key = os.getenv("SENDGRID_API_KEY")
-    alert_from = os.getenv("ALERT_FROM")
-    alert_to = os.getenv("ALERT_TO")
-    if not sg_key or not alert_from or not alert_to:
-        log.error("SENDGRID_API_KEY, ALERT_FROM, or ALERT_TO not set.")
-        return None
-    message = Mail(
-        from_email=alert_from,
-        to_emails=alert_to,
-        subject=subject,
-        html_content=html_body,
-    )
-    try:
-        sg = SendGridAPIClient(sg_key)
-        response = sg.send(message)
-        log.info("SendGrid status: %s", response.status_code)
-        if response.status_code >= 400:
-            log.error("SendGrid error %s: %s", response.status_code, response.body)
-        return response.status_code
-    except Exception as exc:
-        log.error("SendGrid send failed: %s", exc)
-        return None
+def send_email(html_body: str, subject: str) -> int:
+    """Send email via Resend. Returns HTTP status code. Raises on failure."""
+    return _resend_send(subject, html_body)
 
 
 def run():

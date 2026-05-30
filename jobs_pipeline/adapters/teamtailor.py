@@ -9,6 +9,7 @@ on any network-level failure so Boylesports still returns jobs.
 import html as html_module
 import logging
 import re
+import time
 from urllib.parse import urljoin
 
 import requests
@@ -29,7 +30,9 @@ _JSON_API_HEADERS = {
     "Accept": "application/vnd.api+json",
 }
 
-_SUMMARY_MAX = 2000
+_SUMMARY_MAX  = 2000   # JSON:API body field cap
+_DETAIL_MAX   = 1500   # HTML detail page cap (matches linkedin adapter)
+_DETAIL_SLEEP = 0.3    # seconds between detail page fetches
 
 # Anchor texts that are navigation links, not job titles
 _NAV_TITLES = {"all jobs", "view all", "see all", "see all jobs", "back", "see more", "load more"}
@@ -47,6 +50,44 @@ def _strip_html(html: str) -> str:
         return text[:_SUMMARY_MAX]
     except Exception:
         return html[:_SUMMARY_MAX]
+
+
+def _fetch_detail_text(url: str) -> str | None:
+    """Fetch a Teamtailor job detail page and extract the description text.
+
+    Tries specific description container selectors before falling back to the
+    full <main> element. Used by the HTML fallback path when the JSON:API is
+    blocked by the CDN.
+    """
+    try:
+        resp = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=30)
+        resp.raise_for_status()
+    except Exception as exc:
+        log.debug("Teamtailor detail fetch failed for %s: %s", url[:80], exc)
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    for sel in (
+        "[data-controller='job-description']",
+        "[data-testid='job-description']",
+        ".content-text",
+        "[class*='description']",
+        "article",
+    ):
+        el = soup.select_one(sel)
+        if el:
+            text = re.sub(r"\s+", " ", el.get_text(separator=" ")).strip()
+            if len(text) > 50:
+                return text[:_DETAIL_MAX] or None
+
+    # Last resort: full <main> text (includes breadcrumb noise, but still useful)
+    main = soup.select_one("main")
+    if main:
+        text = re.sub(r"\s+", " ", main.get_text(separator=" ")).strip()
+        return text[:_DETAIL_MAX] or None
+
+    return None
 
 
 class TeamtailorAdapter(BaseAdapter):
@@ -212,13 +253,15 @@ class TeamtailorAdapter(BaseAdapter):
                 continue
             seen.add(href)
 
+            summary = _fetch_detail_text(href)
             jobs.append({
                 "url": href,
                 "title": title,
                 "location_raw": None,
-                "summary": None,
+                "summary": summary,
                 "salary_range": None,
             })
+            time.sleep(_DETAIL_SLEEP)
 
         log.info("[%s] HTML fallback found %d jobs from %s", company, len(jobs), resp.url)
         return jobs

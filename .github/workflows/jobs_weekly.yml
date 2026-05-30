@@ -25,7 +25,7 @@ jobs:
         run: python jobs_pipeline/run_weekly.py
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_FROM: monitor@sportsd3c0d3d.ie
           ALERT_TO: iddodiamant@gmail.com
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}

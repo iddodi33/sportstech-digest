@@ -21,9 +21,8 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
+from email_client import send_email as _send_email
 from news_pipeline import GOOGLE_NEWS_FEEDS, _decode_google_news_url
 from supabase_client import build_news_item, upsert_news_item
 
@@ -411,14 +410,6 @@ JSON array:"""
 # ---------------------------------------------------------------------------
 
 def send_email(article: dict) -> bool:
-    sg_key     = os.getenv("SENDGRID_API_KEY")
-    alert_from = os.getenv("ALERT_FROM")
-    alert_to   = os.getenv("ALERT_TO")
-    alert_cc   = os.getenv("ALERT_CC", "")
-    if not sg_key or not alert_from or not alert_to:
-        log.error("SENDGRID_API_KEY, ALERT_FROM, or ALERT_TO not set in .env")
-        return False
-
     score       = article.get("score",            "?")
     title       = article.get("title",            "")
     category    = article.get("category",         "")
@@ -468,30 +459,8 @@ def send_email(article: dict) -> bool:
 <hr>
 <p style="color:#888;font-size:12px;">Sent by Sports D3c0d3d daily monitor. Article scored {score}/5 for Irish sportstech relevance.</p>"""
 
-    message = Mail(
-        from_email=alert_from,
-        to_emails=alert_to,
-        subject=subject,
-        html_content=html_body,
-    )
-
-    if alert_cc:
-        from sendgrid.helpers.mail import Cc
-        cc_addresses = [addr.strip() for addr in alert_cc.split(",") if addr.strip()]
-        for cc in cc_addresses:
-            message.add_cc(Cc(cc))
-
-    try:
-        sg = SendGridAPIClient(sg_key)
-        response = sg.send(message)
-        log.info("SendGrid response: status=%s for '%s'", response.status_code, title[:60])
-        if response.status_code >= 400:
-            log.error("SendGrid returned error status %s: %s", response.status_code, response.body)
-            return False
-        return True
-    except Exception as exc:
-        log.error("SendGrid send failed for '%s': %s", title, exc)
-        return False
+    _send_email(subject, html_body, cc=os.getenv("ALERT_CC"))
+    return True
 
 
 # ---------------------------------------------------------------------------

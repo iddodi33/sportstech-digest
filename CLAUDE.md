@@ -77,7 +77,7 @@ sportstech-digest/
 
 ```
 ANTHROPIC_API_KEY                  Haiku for jobs; Sonnet for news + events
-SENDGRID_API_KEY                   Email send
+RESEND_API_KEY                     Email send
 ALERT_FROM=monitor@sportsd3c0d3d.ie
 ALERT_TO=iddodiamant@gmail.com
 ALERT_CC                           Optional comma-separated CC (daily news alerts)
