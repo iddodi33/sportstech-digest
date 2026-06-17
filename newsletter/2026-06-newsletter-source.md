@@ -1,5 +1,5 @@
 # Newsletter source — June 2026
-_2026-06-16 23:23 UTC_
+_2026-06-17 09:37 UTC_
 News: 70 · Jobs: 24 · Events: 0
 
 ---
@@ -772,8 +772,8 @@ _Tags: performance coaching, platforms, trend analysis_
 - [Senior Marketing Planning Manager - Portfolio (Fixed-Term Contract)](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Head-of-Marketing-Portfolio-Planning---12m-FTC_JR137322-2) — Dublin · Marketing & Content
 
 **Stats Perform** (2)
-- [Customer Success Manager (Horse Racing)](https://www.linkedin.com/jobs/view/customer-success-manager-horse-racing-at-stats-perform-4203791587/) — Limerick · Customer Success
 - [Senior Team Lead](https://www.linkedin.com/jobs/view/senior-team-lead-at-stats-perform-4339077155/) — Limerick · Operations
+- [Customer Success Manager (Horse Racing)](https://www.linkedin.com/jobs/view/customer-success-manager-horse-racing-at-stats-perform-4203791587/) — Limerick · Customer Success
 
 **WHOOP** (4)
 - [Membership Services Team Lead- Overnight](https://jobs.ashbyhq.com/whoop/70aa573e-c309-48de-aef6-e5e92966fdb9) — Limerick · hybrid · Customer Success
