@@ -10,3 +10,4 @@ supabase==2.*
 googlenewsdecoder
 aiohttp
 markdown
+resend==2.15.0
