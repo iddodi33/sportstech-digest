@@ -1,8 +1,73 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-05-28*
+*Last updated: 2026-06-30*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-06-30 — LinkedIn stale-job leak fix
+
+Root cause of stale LinkedIn jobs reaching the hub as pending (every manual
+free-text rejection in the hub was a LinkedIn job): the posted-age gate allowed
+any job whose date couldn't be parsed, Serper discovery had no recency
+constraint, and the LinkedIn `run()` override never stamped source-tracking so
+the archive sweep never aged stale LinkedIn jobs out.
+
+### Code changes — `jobs_pipeline/adapters/linkedin.py`
+
+- **Serper recency:** new `_SERPER_RECENCY_TBS = "qdr:m"` (past month) added to
+  the Serper POST payload, so discovery only returns recently-posted listings.
+- **Strict posted-age gate:** when `_extract_posted_days_ago` returns `None`,
+  the adapter now falls back to the LinkedIn job ID instead of allowing. New
+  `_extract_job_id(url)` parses the trailing numeric ID (stripping any query
+  string / `refId` / fragment so a refId's digits aren't misread). New
+  `MIN_LINKEDIN_JOB_ID = 4_200_000_000` floor (~95% of current-era ~4.40e9):
+  IDs below it reject as `stale_id`; no usable ID rejects as `posted_age_unknown`.
+  Date-found-and-too-old still rejects as `posted_too_old` (unchanged). The
+  default for LinkedIn flipped from allow to reject.
+- **Empirical finding:** LinkedIn serves scraper IPs a stripped page with no
+  parseable `datePosted` on ~100% of fetches, so `MIN_LINKEDIN_JOB_ID` is the
+  *primary* recency gate in practice, not a backstop. Floor set accordingly.
+- **Counters:** per-source summary log gains `stale_id` and `age_unknown`
+  alongside the existing `stale_age`.
+- **Source tracking:** `run()` now wraps its body in `try/finally` mirroring
+  `BaseAdapter.run()` — always `mark_source_attempted` (last_scrape_run_at), and
+  `mark_source_successful` (last_successful_scrape_at) when `upserted_count > 0`.
+  Runs on every path including Serper-no-results, fixing both the archive sweep
+  health gate skipping LinkedIn sources and the ggCircuit/Orreco "never scraped"
+  cosmetic issue.
+
+### Code changes — `jobs_pipeline/classifier.py`
+
+- Fixed `_check_fdi_geography_allowlisted` Workday office-slug normalisation:
+  `.replace('-', ' ').replace('---', ' ')` → `re.sub(r'-+', ' ', office)`, so
+  `/job/Remote---Bulgaria/` collapses to `remote bulgaria` and matches the
+  reject marker instead of leaking to `pending`.
+
+### Tests
+
+- New `jobs_pipeline/test_linkedin_gate.py` (19 assertions, no pytest dep):
+  `_extract_posted_days_ago` (JSON-LD, Z-suffix, relative regex, None paths) and
+  `_extract_job_id` (bare ID, title slug, `?refId`, refId-with-digits,
+  trackingId, `#fragment`, legacy 8-digit, floor comparison).
+- Extended `classifier.py` `__main__` harness with 5 allowlisted-geography
+  office-slug cases (Remote---Bulgaria, Remote---London, Dublin, Berlin,
+  Tokyo-Office). Run: `python jobs_pipeline/classifier.py`.
+
+### Dry-run verification (live Serper + LinkedIn)
+
+| Company | Would-upsert before | Would-upsert after |
+|---|---|---|
+| Stats Perform (FDI) | 9 (all undated, allowed) | 0 |
+| Legitfit (indigenous) | 9 (all undated, allowed) | 0 |
+
+### Pending cleanup (handed to operator, not run)
+
+Historical stale rows already in the queue need a manual SQL cleanup — see the
+`BEGIN; <preview SELECT>; UPDATE; COMMIT;` block provided this session (reject
+LinkedIn pending rows with `classification->>'sportstech_relevance' IS NULL`
+and a job ID below the floor). Run after reviewing the preview row count.
 
 ---
 
@@ -65,8 +130,6 @@ Rolling log of changes and open issues. Most recent session first.
 
 ## Open Bugs and Observations
 
-**LinkedIn adapter does NOT call `mark_source_successful` / `mark_source_attempted`.** The `finally` block from `base.py`'s `run()` that handles these calls is absent from `linkedin.py`'s `run()` override. Effect: `last_successful_scrape_at` and `last_scrape_run_at` on `company_careers_sources` rows are never updated for LinkedIn sources. The archive sweep's health gate uses `last_successful_scrape_at` to decide which sources to process, so LinkedIn-sourced jobs are silently skipped by every sweep. This compounds with today's `last_seen_in_scrape_run` fix: data is now stamped correctly per job, but the sweep still won't fire against LinkedIn sources. Also explains why ggCircuit and Orreco show as "never scraped" in the weekly email despite the adapter clearly running against them. Fix pattern next session: copy `base.py`'s `finally` block into `linkedin.py`'s `run()` override, same approach as today's `last_seen` fix.
-
 **Kitman Labs duplicate job insertion.** Same job titles appear with both `approved` and `rejected` status, timestamps within 1 second. Suggests the upsert key is not uniquely resolving on URL, or the RPC is not deduplicating correctly. Pre-existing, not related to today's work. Investigate before next Friday's run.
 
 **`rejected_reason` inconsistency in older jobs.** The `rejected_reason` text column and the `rejected_reason` field inside `classification` JSONB appear inconsistent for some older rows (Kitman Labs jobs have null in both despite having classification data). The write path in `run_classifier.py` sets both, but older jobs may have been written before that field existed. Worth auditing.
@@ -75,23 +138,18 @@ Rolling log of changes and open issues. Most recent session first.
 
 **Boylesports Teamtailor returned 0 jobs this week.** Verified the endpoint is live at `careers.boylesports.com/jobs.json` — genuinely empty board, not a scraping failure. Monitor next Friday.
 
-**ggCircuit and Orreco show as "never scraped" in email.** LinkedIn adapter ran and returned `serper_no_results` for both. The LinkedIn adapter does not call `mark_source_attempted` on Serper-no-results (only `_update_source_error` with `last_scrape_error`). `last_scrape_run_at` is never set, so the snapshot treats them as never scraped. Cosmetic issue — the adapter did run. Fix: call `mark_source_attempted` in the `_SerperNoResultsError` handler in `linkedin.py:run()`.
-
 **Rippling adapter runs against 0 sources.** Logs a line each week. `rippling` is not in the `ats_platform` CHECK constraint — cannot add sources without `ALTER TABLE`. If Rippling support is needed (Thrive Global, others), add to constraint first.
 
 **Phenom adapter also runs against 0 sources.** Same cleanup opportunity.
 
 **Greenhouse Harvest API deprecation August 2026.** The Harvest API (v1/v2) is being deprecated. The Job Board API (`boards-api.greenhouse.io`) which this pipeline uses is NOT affected. Note for awareness only.
 
-**Potential `_check_fdi_geography_allowlisted` URL parsing edge case.** The office normalisation uses `.replace('-', ' ').replace('---', ' ')` — the triple-dash replace runs after single-dash replace and is therefore a no-op (all dashes already converted to spaces). A Workday path like `/job/Remote---Bulgaria/` becomes `"remote   bulgaria"` (three spaces), which would NOT match the `'remote bulgaria'` reject marker. If DraftKings Bulgaria jobs slip through next Friday this is why. Cleaner fix: `re.sub(r'-+', ' ', office)`.
-
 ---
 
 ## Next Session Candidates
 
-- Validate new geography function and LinkedIn staleness check on next Friday's run. Expected pending queue: 30–80 jobs.
-- Fix `ggCircuit` / `Orreco` "never scraped" cosmetic issue — call `mark_source_attempted` in `_SerperNoResultsError` handler.
-- Fix `remote---bulgaria` URL slug edge case — replace `.replace('-', ' ').replace('---', ' ')` with `re.sub(r'-+', ' ', office)`.
+- Validate the strict LinkedIn posted-age gate + source-tracking fix on next Friday's run: expect far fewer LinkedIn pending jobs, and confirm `last_scrape_run_at` / `last_successful_scrape_at` now populate for LinkedIn sources (incl. ggCircuit/Orreco no-results).
+- Re-check `MIN_LINKEDIN_JOB_ID` (4.2e9) against a known-recent posting after a few weeks and bump toward ~95% of current-era IDs if drift causes false `stale_id` rejects.
 - Investigate Kitman Labs duplicate jobs and confirm whether other companies share the pattern.
 - Decide whether to skip adapters with 0 active sources (rippling, phenom) to reduce log noise.
 - Build proper Rippling adapter if EA Sports / Thrive Global volume justifies; requires `ALTER TABLE ats_platform CHECK` first.

@@ -137,7 +137,7 @@ if is_fdi and not is_irish_founded:
 
 `_check_fdi_geography_allowlisted` (18 allowlisted FDIs) — Ireland+UK eligible list checked first (all Irish locations plus London, Leeds, Manchester, Birmingham, Edinburgh, Glasgow, Bristol, Sheffield, Liverpool, Newcastle, Cardiff, Derry, Antrim, `uk`, `united kingdom`, `england`, `scotland`, `wales`, `remote - uk`, EMEA); ambiguous multi-location strings attempt a URL fallback before returning pending (see below); definitive non-Ireland/UK strings reject; unknown → pending.
 
-**URL fallback for ambiguous locations** (added 2026-05-28): when `location_raw` matches `_AMBIGUOUS_LOC` ("locations", "multiple") or `_N_LOCATIONS_RE` ("N Locations"), and a `url` is provided, the function parses the Workday `/job/{Office-CC}/` path segment. It lowercases and replaces `-` with spaces, then checks against:
+**URL fallback for ambiguous locations** (added 2026-05-28; hyphen-normalisation fixed 2026-06-30): when `location_raw` matches `_AMBIGUOUS_LOC` ("locations", "multiple") or `_N_LOCATIONS_RE` ("N Locations"), and a `url` is provided, the function parses the Workday `/job/{Office-CC}/` path segment. It lowercases and collapses any run of hyphens to a single space via `re.sub(r'-+', ' ', office)` (so `/job/Remote---Bulgaria/` → `remote bulgaria`; the old chained `.replace('-', ' ').replace('---', ' ')` left three spaces and silently failed to match the reject marker), then checks against:
 - Ireland markers (`dublin`, `ireland`, ` ie`, etc.) → `"pass"`
 - UK markers (`london`, `leeds`, ` uk`, `england`, etc.) → `"pass"`
 - Reject markers (US state codes ` ma`, ` ny`, ` ca`, etc.; major US cities; `sofia`, `plovdiv`, ` bg`, `singapore`, `dubai`, `barcelona`, `berlin`, `colombia`, `gibraltar`, `usa`) → `"reject"`
@@ -179,6 +179,8 @@ Query format:
 
 `linkedin_search_name` field on `company_careers_sources` overrides `company_name` in the query. Active overrides as of 2026-05-28: EA Sports → `"Electronic Arts"`, Stats Perform → `"Stats Perform"`, ggCircuit → `"ggCircuit"`, Orreco → `"ORRECO"`, Off The Ball, Clubforce, Danu Sports (exact names set per source row).
 
+Recency window: the Serper payload includes `tbs=_SERPER_RECENCY_TBS` (`"qdr:m"` — past month) so discovery only returns recently-posted listings rather than ranking by relevance. Widen (`qdr:y`) or narrow (`qdr:w`) via the module constant.
+
 Returns up to 10 LinkedIn job-view URLs from Serper organic results.
 
 **Stage 2 — Domain filter**
@@ -191,24 +193,36 @@ GET with rotating User-Agent and 1.5–2.5s throttle. Session refreshed with 60�
 **Stage 4 — Name validation**
 Parses `hiringOrganization.name` from JSON-LD. Normalises both names (lowercase, strip legal suffixes, collapse whitespace). Accepts exact match and trailing-s variation (Sport/Sports). When `linkedin_search_name` override is set: skips equality check, still rejects if hiring_org is absent.
 
-**Stage 5 — Posted-age check** (added 2026-05-28)
-Constant: `MAX_POSTED_AGE_DAYS = 90`
+**Stage 5 — Posted-age check** (added 2026-05-28; made strict 2026-06-30)
+Constants:
+- `MAX_POSTED_AGE_DAYS = 90` — max age when a posted date IS parseable.
+- `MIN_LINKEDIN_JOB_ID = 4_200_000_000` — job-ID floor used when no date is parseable. LinkedIn job IDs are monotonic over time; June 2026 postings are ~4.40e9, so this floor (~95% of current) rejects 2025-and-earlier IDs including legacy 8-digit ~2015 listings. **To refresh:** open a known-recent LinkedIn job, read the trailing numeric ID from its URL, set the floor to ~95% of it.
 
 `_extract_posted_days_ago(html)`:
 1. JSON-LD `datePosted` ISO timestamp (preferred — precise).
 2. Regex fallback: `"(?:Posted|Reposted)\s+(\d+)\s+(hour|day|week|month|year)s?\s+ago"` — converts hours→0 days, weeks→×7, months→×30, years→×365.
 3. Returns `None` if neither method finds a date.
 
-Behaviour:
-- `None` → log warning, allow job (lenient on missing data).
-- `> MAX_POSTED_AGE_DAYS` → reject with reason `"posted_too_old (N days)"`, count in `stale_age`.
-- Otherwise → allow.
+`_extract_job_id(url)`: parses the trailing numeric ID from a `/jobs/view/` URL, stripping any query string / `refId` / fragment first so a refId's own digits aren't misread. Returns `int` or `None`.
+
+> **Note:** LinkedIn serves scraper IPs a stripped page with no parseable `datePosted` on ~100% of fetches, so in practice `_extract_posted_days_ago` returns `None` and the **job-ID floor is the primary recency gate**, not a backstop.
+
+Behaviour (strict — the default flipped from allow to reject):
+- date found & `> MAX_POSTED_AGE_DAYS` → reject `"posted_too_old (N days)"`, count `stale_age`.
+- no date, job ID `< MIN_LINKEDIN_JOB_ID` → reject `"stale_id (N)"`, count `stale_id`.
+- no date, no usable job ID → reject `"posted_age_unknown"`, count `age_unknown`.
+- no date, job ID `>= MIN_LINKEDIN_JOB_ID` → allow (recent enough by ID).
+- date found & within range → allow.
+
+This block is unconditional — it runs on every job, FDI or indigenous.
 
 Per-source summary log format:
 ```
 linkedin: '{company}' serper=N domain_filter=N fetched=N validated=N
-errors: 999=N parse=N name_mismatch=N stale_age=N bypassed=N
+errors: 999=N parse=N name_mismatch=N stale_age=N stale_id=N age_unknown=N bypassed=N
 ```
+
+**Source tracking** (`run()` override): mirrors `BaseAdapter.run()` via a `try/finally` — always `mark_source_attempted`, plus `mark_source_successful` when `upserted_count > 0`. Runs on every path including Serper-no-results, so the archive sweep health gate sees LinkedIn sources and result-less sources (ggCircuit/Orreco) are no longer reported as "never scraped".
 
 ---
 
