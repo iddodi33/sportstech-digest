@@ -222,7 +222,12 @@ def _check_fdi_geography_allowlisted(location_raw: str | None, url: str | None =
     if _N_LOCATIONS_RE.search(location_raw) or any(pattern in loc for pattern in _AMBIGUOUS_LOC):
         workday_office_match = re.search(r'/job/([^/]+)/', url) if url else None
         if workday_office_match:
-            office = workday_office_match.group(1).lower().replace('-', ' ').replace('---', ' ')
+            # Workday encodes spaces as '-' and word-internal separators as '---',
+            # e.g. /job/Remote---Bulgaria/. Collapse any run of hyphens to a single
+            # space so the slug matches reject/eligible markers ('remote bulgaria').
+            # A chained .replace('-', ' ').replace('---', ' ') fails here: the first
+            # call turns '---' into three spaces before the second can match it.
+            office = re.sub(r'-+', ' ', workday_office_match.group(1).lower())
             if any(marker in office for marker in [
                 'ireland', ' ie', '-ie', 'dublin', 'limerick', 'cork', 'galway',
                 'belfast', 'waterford', 'kilkenny', 'derry', 'londonderry',
@@ -538,6 +543,30 @@ if __name__ == "__main__":
         ok = actual_reject == expect_reject
         status = "PASS" if ok else "FAIL"
         print(f"{status}  {location_raw!r:25s}  expect_reject={expect_reject}  got={actual_reject}  [{label}]")
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+
+    # ── Allowlisted FDI geography — Workday office-slug URL fallback ───────────
+    # Exercises the re.sub(r'-+', ' ', office) normalisation. The key regression
+    # case is 'Remote---Bulgaria': a chained .replace('-', ' ').replace('---', ' ')
+    # turned '---' into three spaces BEFORE the second replace could match it, so
+    # the slug never matched the 'remote bulgaria' reject marker and leaked to
+    # 'pending'. With re.sub it collapses correctly to 'remote bulgaria'.
+    _WD = "https://acme.wd1.myworkdayjobs.com/External/job/{}/REQ123"
+    geo_cases = [
+        ("Multiple Locations", _WD.format("Remote---Bulgaria"), "reject", "Remote---Bulgaria -> 'remote bulgaria'"),
+        ("2 Locations",        _WD.format("Remote---London"),   "pass",   "multi-hyphen UK office -> 'remote london'"),
+        ("Multiple Locations", _WD.format("Dublin"),            "pass",   "Ireland office slug"),
+        ("Multiple Locations", _WD.format("Berlin"),           "reject", "single-token non-IE/UK reject"),
+        ("Multiple Locations", _WD.format("Tokyo-Office"),     "pending","unknown office -> stays pending"),
+    ]
+    for location_raw, url, expect_geo, label in geo_cases:
+        actual_geo = _check_fdi_geography_allowlisted(location_raw, url)
+        ok = actual_geo == expect_geo
+        status = "PASS" if ok else "FAIL"
+        print(f"{status}  geo_allowlisted  expect={expect_geo:8s} got={actual_geo:8s}  [{label}]")
         if ok:
             passed += 1
         else:
