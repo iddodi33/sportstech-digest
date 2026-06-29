@@ -36,7 +36,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from .base import BaseAdapter
-from ..supabase_jobs_client import get_client, mark_job_seen, upsert_job
+from ..supabase_jobs_client import (
+    get_client,
+    mark_job_seen,
+    mark_source_attempted,
+    mark_source_successful,
+    upsert_job,
+)
 
 log = logging.getLogger(__name__)
 
@@ -773,9 +779,17 @@ class LinkedInAdapter(BaseAdapter):
             → set self.abort=True, update source error, return stats
         _SerperNoResultsError
             → update source error, return stats (does NOT abort)
+
+        Source tracking mirrors BaseAdapter.run(): a finally block always stamps
+        last_scrape_run_at (mark_source_attempted), or last_successful_scrape_at
+        too (mark_source_successful) when at least one job was upserted. This runs
+        on every path — aborts, no-results, and success — so the archive sweep's
+        health gate sees LinkedIn sources, and the weekly email no longer reports
+        result-less LinkedIn sources as "never scraped".
         """
         run_started_at = datetime.now(timezone.utc)
         source_name = source.get("company_name") or source.get("id", "unknown")
+        source_id = source.get("id")
         stats = {
             "source_name": source_name,
             "jobs_found": 0,
@@ -784,78 +798,88 @@ class LinkedInAdapter(BaseAdapter):
             "reactivated": 0,
             "errors": 0,
         }
+        upserted_count = 0
 
         try:
-            jobs = self.fetch(source)
-
-        except _SerperAuthError as exc:
-            log.error("linkedin: Serper auth failure — aborting run: %s", exc)
-            _update_source_error(source["id"], "serper_auth_failed")
-            self.abort = True
-            stats["errors"] += 1
-            return stats
-
-        except _SerperRateLimitError as exc:
-            log.error("linkedin: Serper rate limit — aborting run: %s", exc)
-            _update_source_error(source["id"], "serper_rate_limited")
-            self.abort = True
-            stats["errors"] += 1
-            return stats
-
-        except _SerperNoResultsError as exc:
-            log.info("linkedin: '%s' — no results from Serper: %s", source_name, exc)
-            _update_source_error(source["id"], "serper_no_results")
-            return stats
-
-        except _RateLimitAbortError as exc:
-            log.error("linkedin: LinkedIn rate-limit abort during '%s': %s", source_name, exc)
-            _update_source_error(source["id"], "linkedin_999")
-            self.abort = True
-            stats["errors"] += 1
-            return stats
-
-        except Exception as exc:
-            log.error("linkedin: unexpected error for '%s': %s", source_name, exc)
-            stats["errors"] += 1
-            return stats
-
-        stats["jobs_found"] = len(jobs)
-
-        for job in jobs:
-            url = (job.get("url") or "").strip()
-            title = (job.get("title") or "").strip()
-
-            if not url or not title:
-                log.warning("linkedin: [%s] skipping job missing url/title", source_name)
-                stats["errors"] += 1
-                continue
-
             try:
-                result = upsert_job(
-                    url=url,
-                    title=title,
-                    source=self.platform,
-                    sources_source_id=source["id"],
-                    company_id=source["company_id"],
-                    company_name=source.get("company_name", ""),
-                    location_raw=job.get("location_raw"),
-                    summary=job.get("summary"),
-                    salary_range=job.get("salary_range"),
-                )
-                if not result:
-                    stats["errors"] += 1
-                else:
-                    job_id = result.get("id")
-                    if job_id:
-                        mark_job_seen(job_id, run_started_at)
-                    if result.get("was_inserted"):
-                        stats["inserted"] += 1
-                    elif result.get("was_reactivated"):
-                        stats["reactivated"] += 1
-                    else:
-                        stats["updated"] += 1
-            except Exception as exc:
-                log.error("linkedin: upsert_job failed for '%s': %s", url[:80], exc)
-                stats["errors"] += 1
+                jobs = self.fetch(source)
 
-        return stats
+            except _SerperAuthError as exc:
+                log.error("linkedin: Serper auth failure — aborting run: %s", exc)
+                _update_source_error(source["id"], "serper_auth_failed")
+                self.abort = True
+                stats["errors"] += 1
+                return stats
+
+            except _SerperRateLimitError as exc:
+                log.error("linkedin: Serper rate limit — aborting run: %s", exc)
+                _update_source_error(source["id"], "serper_rate_limited")
+                self.abort = True
+                stats["errors"] += 1
+                return stats
+
+            except _SerperNoResultsError as exc:
+                log.info("linkedin: '%s' — no results from Serper: %s", source_name, exc)
+                _update_source_error(source["id"], "serper_no_results")
+                return stats
+
+            except _RateLimitAbortError as exc:
+                log.error("linkedin: LinkedIn rate-limit abort during '%s': %s", source_name, exc)
+                _update_source_error(source["id"], "linkedin_999")
+                self.abort = True
+                stats["errors"] += 1
+                return stats
+
+            except Exception as exc:
+                log.error("linkedin: unexpected error for '%s': %s", source_name, exc)
+                stats["errors"] += 1
+                return stats
+
+            stats["jobs_found"] = len(jobs)
+
+            for job in jobs:
+                url = (job.get("url") or "").strip()
+                title = (job.get("title") or "").strip()
+
+                if not url or not title:
+                    log.warning("linkedin: [%s] skipping job missing url/title", source_name)
+                    stats["errors"] += 1
+                    continue
+
+                try:
+                    result = upsert_job(
+                        url=url,
+                        title=title,
+                        source=self.platform,
+                        sources_source_id=source["id"],
+                        company_id=source["company_id"],
+                        company_name=source.get("company_name", ""),
+                        location_raw=job.get("location_raw"),
+                        summary=job.get("summary"),
+                        salary_range=job.get("salary_range"),
+                    )
+                    if not result:
+                        stats["errors"] += 1
+                    else:
+                        upserted_count += 1
+                        job_id = result.get("id")
+                        if job_id:
+                            mark_job_seen(job_id, run_started_at)
+                        if result.get("was_inserted"):
+                            stats["inserted"] += 1
+                        elif result.get("was_reactivated"):
+                            stats["reactivated"] += 1
+                        else:
+                            stats["updated"] += 1
+                except Exception as exc:
+                    log.error("linkedin: upsert_job failed for '%s': %s", url[:80], exc)
+                    stats["errors"] += 1
+
+            return stats
+
+        finally:
+            if source_id:
+                if upserted_count > 0:
+                    mark_source_successful(source_id, run_started_at)
+                else:
+                    mark_source_attempted(source_id, run_started_at)
