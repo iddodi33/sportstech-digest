@@ -50,12 +50,16 @@ MAX_POSTED_AGE_DAYS = 90
 _SERPER_RECENCY_TBS = "qdr:m"
 
 # LinkedIn job IDs are monotonic over time, so a low ID means an old listing.
-# June 2026 postings are ~4.40e9; this floor (~91% of current) rejects 2025-and-
-# earlier IDs — including legacy 8-digit ~2015 listings — while leaving margin
-# below current so genuinely recent posts aren't false-rejected.
+# In practice LinkedIn serves scraper IPs a stripped page with no parseable
+# datePosted, so _extract_posted_days_ago almost always returns None and THIS
+# floor — not the date check — is the primary recency gate for jobs that clear
+# the qdr:m Serper filter and the domain filter.
+# June 2026 postings are ~4.40e9; this floor (~95% of current) rejects 2025-and-
+# earlier IDs — including legacy 8-digit ~2015 listings — while leaving ~0.2e9
+# margin below current so genuinely recent posts aren't false-rejected.
 # To refresh: open any known-recent LinkedIn job, read the trailing numeric ID
-# from its URL, and set this to roughly 90% of that value.
-MIN_LINKEDIN_JOB_ID = 4_000_000_000
+# from its URL, and set this to roughly 95% of that value.
+MIN_LINKEDIN_JOB_ID = 4_200_000_000
 
 _USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
