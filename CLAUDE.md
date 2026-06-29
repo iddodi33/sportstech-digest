@@ -158,6 +158,10 @@ python events_pipeline/run_weekly_events.py --source meetup --skip-email
 python weekly_linkedin_digest.py
 ```
 
+### Local TLS workaround (Norton)
+
+The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Python's OpenSSL 3.5 rejects under strict verification (`Basic Constraints of CA cert not marked critical`), so local runs of any pipeline script fail TLS to Supabase / Serper / LinkedIn. Workaround for local runs only: build a combined certifi + Norton CA bundle (`C:\Users\iddod\.certs\norton-ca.pem`), point `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` at it, and clear `VERIFY_X509_STRICT` on the httpx (`ssl.create_default_context`) and requests/urllib3 (`create_urllib3_context`) contexts — applied at runtime via a throwaway launcher, never committed. GitHub Actions does not see the Norton proxy, so scheduled runs are unaffected; this only blocks local execution.
+
 ---
 
 ## Do Not Change
