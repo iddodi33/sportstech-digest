@@ -44,6 +44,19 @@ _SERPER_URL = "https://google.serper.dev/search"
 _SUMMARY_MAX = 1500
 MAX_POSTED_AGE_DAYS = 90
 
+# Serper recency window for LinkedIn discovery. qdr:m = past month.
+# Restricts discovery to recently-posted listings so stale jobs are never
+# fetched in the first place. Widen (qdr:y) / narrow (qdr:w) here.
+_SERPER_RECENCY_TBS = "qdr:m"
+
+# LinkedIn job IDs are monotonic over time, so a low ID means an old listing.
+# June 2026 postings are ~4.40e9; this floor (~91% of current) rejects 2025-and-
+# earlier IDs — including legacy 8-digit ~2015 listings — while leaving margin
+# below current so genuinely recent posts aren't false-rejected.
+# To refresh: open any known-recent LinkedIn job, read the trailing numeric ID
+# from its URL, and set this to roughly 90% of that value.
+MIN_LINKEDIN_JOB_ID = 4_000_000_000
+
 _USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -204,8 +217,9 @@ def _extract_posted_days_ago(html: str) -> int | None:
 
     Method 1 — JSON-LD datePosted (preferred: precise ISO timestamp).
     Method 2 — regex on relative human timestamps ("Posted 3 weeks ago", etc.).
-    Returns None if neither method finds a usable date; callers treat None as
-    unknown and should allow the job rather than reject on missing data.
+    Returns None if neither method finds a usable date. The LinkedIn caller
+    treats None strictly: it falls back to the job-ID floor (_extract_job_id /
+    MIN_LINKEDIN_JOB_ID) and rejects rather than allowing on missing data.
     """
     # Method 1: JSON-LD
     soup = BeautifulSoup(html, "html.parser")
@@ -246,6 +260,24 @@ def _extract_posted_days_ago(html: str) -> int | None:
             return n * 365
 
     return None
+
+
+def _extract_job_id(url: str) -> int | None:
+    """Parse the trailing numeric LinkedIn job ID from a /jobs/view/ URL.
+
+    Handles bare-ID slugs ('.../view/4400000000/'), title slugs
+    ('.../view/software-engineer-at-acme-4400000000/'), and URLs carrying a
+    query string / fragment after the ID ('.../view/4400000000/?refId=abc123').
+    Query and fragment are stripped first so a refId's own digits can't be
+    misread as the job ID. Returns the trailing run of digits as int, or None.
+    """
+    m = _JOB_VIEW_RE.match(url)
+    slug = m.group(1) if m else url
+    # Drop query string / fragment, then trailing slash, then take last segment.
+    slug = slug.split("?")[0].split("#")[0].rstrip("/")
+    slug = slug.rsplit("/", 1)[-1]
+    id_match = re.search(r"(\d+)$", slug)
+    return int(id_match.group(1)) if id_match else None
 
 
 # ── Adapter ───────────────────────────────────────────────────────────────────
@@ -331,7 +363,10 @@ class LinkedInAdapter(BaseAdapter):
                     "X-API-KEY": self._api_key,
                     "Content-Type": "application/json",
                 },
-                json={"q": query, "num": 10, "gl": "ie", "hl": "en"},
+                json={
+                    "q": query, "num": 10, "gl": "ie", "hl": "en",
+                    "tbs": _SERPER_RECENCY_TBS,
+                },
                 timeout=15,
             )
         except requests.exceptions.RequestException as exc:
@@ -626,6 +661,7 @@ class LinkedInAdapter(BaseAdapter):
 
         # Stage 3 + 4: Fetch, parse, validate
         failed_999 = failed_http = failed_parse = failed_name = failed_stale = 0
+        failed_stale_id = failed_age_unknown = 0
         n_bypassed = 0
         jobs: list[dict] = []
 
@@ -659,17 +695,42 @@ class LinkedInAdapter(BaseAdapter):
                 audit["rejections"].append((url, outcome))
                 continue
 
-            # Posted-age check
+            # Posted-age check — STRICT for LinkedIn. Runs on every job (FDI or
+            # not; this block is unconditional, never gated by company type):
+            #   date found & too old    → reject posted_too_old   (stale_age)
+            #   no date, ID below floor → reject stale_id
+            #   no date, no usable ID   → reject posted_age_unknown
+            #   no date, ID >= floor    → allow (recent enough by ID)
             days_ago = _extract_posted_days_ago(result)
-            if days_ago is None:
-                log.warning("linkedin: could not extract posted date for %s — allowing", url)
-            elif days_ago > MAX_POSTED_AGE_DAYS:
+            if days_ago is not None and days_ago > MAX_POSTED_AGE_DAYS:
                 log.info(
                     "linkedin: REJECT %s — posted_too_old (%d days)", url, days_ago
                 )
                 failed_stale += 1
                 audit["rejections"].append((url, f"posted_too_old ({days_ago}d)"))
                 continue
+            if days_ago is None:
+                job_id = _extract_job_id(url)
+                if job_id is None:
+                    log.info(
+                        "linkedin: REJECT %s — posted_age_unknown (no date, no job id)",
+                        url,
+                    )
+                    failed_age_unknown += 1
+                    audit["rejections"].append((url, "posted_age_unknown"))
+                    continue
+                if job_id < MIN_LINKEDIN_JOB_ID:
+                    log.info(
+                        "linkedin: REJECT %s — stale_id (%d < %d)",
+                        url, job_id, MIN_LINKEDIN_JOB_ID,
+                    )
+                    failed_stale_id += 1
+                    audit["rejections"].append((url, f"stale_id ({job_id})"))
+                    continue
+                log.info(
+                    "linkedin: no posted date but job id %d ≥ floor — allowing %s",
+                    job_id, url,
+                )
 
             jobs.append(parsed)
             audit["validated"] += 1
@@ -681,7 +742,8 @@ class LinkedInAdapter(BaseAdapter):
 
         log.info(
             "linkedin: '%s' serper=%d domain_filter=%d fetched=%d validated=%d "
-            "errors: 999=%d parse=%d name_mismatch=%d stale_age=%d bypassed=%d",
+            "errors: 999=%d parse=%d name_mismatch=%d stale_age=%d stale_id=%d "
+            "age_unknown=%d bypassed=%d",
             company_name,
             audit["serper_count"],
             audit["domain_accepted"],
@@ -691,6 +753,8 @@ class LinkedInAdapter(BaseAdapter):
             failed_parse,
             failed_name,
             failed_stale,
+            failed_stale_id,
+            failed_age_unknown,
             n_bypassed,
         )
 
