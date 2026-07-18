@@ -93,11 +93,21 @@ def _fetch_detail_text(url: str) -> str | None:
 class TeamtailorAdapter(BaseAdapter):
     """Adapter for Teamtailor public job boards.
 
-    Primary path: JSON:API at /jobs.json (JSON:API format with relationships).
-    Fallback path: HTML scraping of careers_url when the JSON:API is unreachable.
+    /jobs.json serves one of two shapes depending on the tenant:
+      - JSON:API (`data`/`included`/`relationships`) — the format this
+        adapter was originally written against.
+      - JSON Feed 1.x (`items`, each carrying a Teamtailor-specific
+        `_jobposting` schema.org JobPosting) — confirmed live for
+        Boylesports as of 2026-07-14. Parsing this shape against the old
+        JSON:API code silently read `data.get("data") == []` every time —
+        0 jobs, no exception raised, so the HTML fallback below (which only
+        triggers on HTTP/connection errors) never kicked in either. 7+ weeks
+        of silent zero-yield before this was caught.
+    Shape is auto-detected per fetch; fallback path (HTML scraping of
+    careers_url) is used only when the endpoint itself is unreachable.
 
-    Both sources use custom domains (ats_slug is NULL); base URL is derived
-    by stripping /jobs.json from ats_api_endpoint.
+    Both known sources use custom domains (ats_slug is NULL); base URL is
+    derived by stripping /jobs.json from ats_api_endpoint.
     """
 
     platform = "teamtailor"
@@ -108,32 +118,41 @@ class TeamtailorAdapter(BaseAdapter):
         company = source.get("company_name", base_url)
 
         try:
-            raw_jobs, included = self._fetch_all_pages(base_url)
-            log.info("[%s] JSON:API returned %d jobs", company, len(raw_jobs))
-            return self._normalise(raw_jobs, included, base_url)
+            shape, raw_jobs, included = self._fetch_all(base_url)
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "?"
             log.warning(
-                "[%s] Teamtailor JSON:API returned HTTP %s — falling back to HTML",
+                "[%s] Teamtailor endpoint returned HTTP %s — falling back to HTML",
                 company, status,
             )
+            return self._fetch_html(source)
         except requests.ConnectionError as exc:
             log.warning(
-                "[%s] Teamtailor JSON:API connection failed (%s) — falling back to HTML",
+                "[%s] Teamtailor endpoint connection failed (%s) — falling back to HTML",
                 company, str(exc)[:120],
             )
+            return self._fetch_html(source)
 
-        return self._fetch_html(source)
+        if shape == "json_feed":
+            log.info("[%s] JSON Feed returned %d jobs", company, len(raw_jobs))
+            return self._normalise_json_feed(raw_jobs)
+
+        log.info("[%s] JSON:API returned %d jobs", company, len(raw_jobs))
+        return self._normalise(raw_jobs, included, base_url)
 
     # ------------------------------------------------------------------ #
-    # JSON:API path                                                        #
+    # JSON:API / JSON Feed path                                            #
     # ------------------------------------------------------------------ #
 
-    def _fetch_all_pages(self, base_url: str) -> tuple[list, list]:
-        """Fetch all paginated pages from the Teamtailor JSON:API.
+    def _fetch_all(self, base_url: str) -> tuple[str, list, list]:
+        """Fetch /jobs.json, auto-detecting JSON:API vs JSON Feed 1.x shape.
 
-        Returns (all job dicts, all included dicts) accumulated across pages.
-        Stops when a page returns fewer records than page_size (last page).
+        Returns (shape, raw_jobs, included) where shape is 'json_api' or
+        'json_feed'. JSON:API paginates via page[number]/page[size] and
+        accumulates `included` for relationship lookups (the query params
+        are harmless no-ops against a JSON Feed tenant, which always
+        returns its full item list in one response). JSON Feed has no
+        `included` equivalent — returned as [] for that shape.
         """
         page_size = 30
         all_jobs: list = []
@@ -148,6 +167,9 @@ class TeamtailorAdapter(BaseAdapter):
             resp.raise_for_status()
             data = resp.json()
 
+            if "items" in data and "data" not in data:
+                return "json_feed", data.get("items") or [], []
+
             page_jobs = data.get("data") or []
             page_included = data.get("included") or []
             all_jobs.extend(page_jobs)
@@ -156,7 +178,46 @@ class TeamtailorAdapter(BaseAdapter):
             if len(page_jobs) < page_size:
                 break
 
-        return all_jobs, all_included
+        return "json_api", all_jobs, all_included
+
+    def _normalise_json_feed(self, items: list) -> list[dict]:
+        """Convert Teamtailor's JSON Feed 1.x items into normalised job dicts.
+
+        Each item carries a Teamtailor-specific `_jobposting` schema.org
+        JobPosting object — richer than the JSON:API shape's bare location
+        id, since it includes a structured jobLocation address directly
+        (no relationship lookup needed).
+        """
+        jobs = []
+        for item in items:
+            title = (item.get("title") or "").strip()
+            url = item.get("url") or ""
+            if not title or not url:
+                continue
+
+            posting = item.get("_jobposting") or {}
+            location_raw = None
+            job_locations = posting.get("jobLocation")
+            if isinstance(job_locations, list) and job_locations:
+                addr = (job_locations[0] or {}).get("address") or {}
+                parts = [
+                    addr.get("addressLocality"),
+                    addr.get("addressRegion"),
+                    addr.get("addressCountry"),
+                ]
+                location_raw = ", ".join(p for p in parts if p) or None
+
+            summary = _strip_html(item.get("content_html") or "") or None
+
+            jobs.append({
+                "url": url,
+                "title": title,
+                "location_raw": location_raw,
+                "summary": summary,
+                "salary_range": None,
+            })
+
+        return jobs
 
     def _normalise(
         self, raw_jobs: list, included: list, base_url: str
