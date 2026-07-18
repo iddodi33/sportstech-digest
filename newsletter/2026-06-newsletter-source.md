@@ -1,12 +1,180 @@
 # Newsletter source — June 2026
-_2026-06-17 09:37 UTC_
-News: 70 · Jobs: 24 · Events: 0
+_2026-06-28 09:22 UTC_
+News: 76 · Jobs: 18 · Events: 0
 
 ---
 
 ## News (last 30 days, score 3+)
 
-### Score 5: Irish SportsTech company news (22)
+### Score 5: Irish SportsTech company news (28)
+
+**Miagen’s pivot from airlines to football | ThinkBusiness**
+Think Business · 2026-06-23 · Scouting & Recruitment, Other / Emerging
+
+Miagen, an Irish company with experience managing €100 billion in aircraft assets, has pivoted to provide management services for elite footballers. The transition demonstrates how Irish expertise in high-value asset management is being applied to the sports talent sector.
+
+_Companies mentioned: Miagen_
+
+_Tags: Miagen, football, asset management, pivot, elite athletes_
+
+[Read more](https://www.thinkbusiness.ie/articles/miagen-teddy-murphy-aviation-finance-football-sportsgen-ai-podcast/)
+
+**Sligo firm SIS Pitches created playing surfaces at nine World Cup stadiums - Irish Independent**
+Irish Independent · 2026-06-22 · Stadium & Event Tech
+
+Sligo-based SIS Pitches supplied playing surfaces for nine stadiums at the FIFA World Cup, showcasing Irish expertise in stadium infrastructure technology. The contract demonstrates the company's position as a leading global supplier of hybrid and artificial pitch systems.
+
+_Companies mentioned: SIS Pitches_
+
+_Tags: SIS Pitches, World Cup, stadium technology, pitch systems_
+
+[Read more](https://www.independent.ie/county/sligo/sligo-firm-sis-pitches-created-playing-surfaces-at-nine-world-cup-stadiums/a/157575937.html)
+
+**Irish sports-tech platform Hexis raises $2.1m in seed funding round**
+Silicon Republic · 2026-06-22 · Performance Analytics, Health, Fitness and Wellbeing
+
+Irish sports-tech platform Hexis has raised $2.1 million in a seed funding round to scale its athlete nutrition technology. The investment enables the company to compete with established global rivals in the performance nutrition space.
+
+_Companies mentioned: Hexis_
+
+_Tags: Hexis, seed funding, nutrition technology, athlete performance_
+
+[Read more](https://www.siliconrepublic.com/start-ups/irish-sports-tech-platform-hexis-raises-seed-funding-round-wearables)
+
+**How an Irish company's pitches are used at the World Cup | BreakingNews**
+Breakingnews · 2026-06-20 · Stadium & Event Tech
+
+An Irish company is supplying pitches used at the 2026 World Cup, showcasing Irish sports infrastructure technology on the global stage. The deployment demonstrates the company's technical capabilities and international competitiveness in sports surface provision.
+
+_Tags: World Cup 2026, pitch technology, Irish sports manufacturer, infrastructure_
+
+[Read more](https://www.breakingnews.ie/ireland/how-an-irish-companys-pitches-are-used-at-the-world-cup-1915530.html)
+
+**How an Irish company's pitches are used at the World Cup**
+Echolive · 2026-06-20 · Stadium & Event Tech
+
+An Irish company has supplied pitch technology being used at the World Cup, demonstrating international reach in sports infrastructure. The deployment represents a major validation point for Irish sports technology exports at the highest level of global competition.
+
+_Tags: World Cup, pitch technology, international expansion, sports infrastructure_
+
+[Read more](https://www.echolive.ie/nationalnews/arid-41866152.html)
+
+**How an Irish company's pitches are used at the World Cup - National Sport - Waterford News & Star**
+Waterford News · 2026-06-20 · Stadium & Event Tech
+
+Waterford-based company's pitch technology has been deployed at World Cup stadiums, showcasing Irish innovation on the global sporting stage. The international deployment demonstrates the company's competitive position in stadium surface technology.
+
+_Tags: pitch technology, World Cup, stadium infrastructure, international expansion_
+
+[Read more](https://www.waterford-news.ie/sport/national-sport/how-an-irish-companys-pitches-are-used-at-the-world-cup_arid-102384.html)
+
+**Sports AI startup Colata eyes €1m seed raise**
+Business Post · 2026-06-20 · Performance Analytics
+
+Colata, an Irish sports AI startup, is seeking to raise €1 million in seed funding to scale its data analytics platform. The fundraise signals growing investor interest in Irish sports technology ventures and will enable product development and market expansion.
+
+_Companies mentioned: Colata_
+
+_Tags: Colata, seed funding, sports AI, fundraising, analytics_
+
+[Read more](https://www.businesspost.ie/companies/sports-ai-startup-colata-eyes-e1m-seed-raise/)
+
+**Hexis raises €1.85m to transform athlete nutrition and take on global rivals**
+Business Post · 2026-06-20 · Health, Fitness and Wellbeing, Performance Analytics
+
+Hexis, an Irish athlete nutrition technology startup, has raised €1.85 million to expand its personalised nutrition platform and compete with established global brands. The funding will support product development and international market entry as the company scales beyond its early customer base.
+
+_Companies mentioned: Hexis_
+
+_Tags: Hexis, seed funding, nutrition, athlete performance, fundraising_
+
+[Read more](https://www.businesspost.ie/tech/hexis-raises-e1-85m-to-transform-athlete-nutrition-and-take-on-global-rivals/)
+
+**USL agrees league-wide deal with Kitman Labs - Inside World Football**
+Insideworldfootball · 2026-06-19 · Performance Analytics
+
+Dublin-based Kitman Labs secured a league-wide partnership agreement with United Soccer League covering athlete performance intelligence across USL clubs. The expanded deal demonstrates Kitman's continued penetration of the North American professional soccer market.
+
+_Companies mentioned: Kitman Labs, United Soccer League_
+
+_Tags: Kitman Labs, USL, Partnership, Performance Intelligence_
+
+[Read more](https://www.insideworldfootball.com/2026/06/19/usl-agrees-league-wide-deal-with-kitman-labs/)
+
+**United Soccer League Announces Expanded Partnership with Performance INTELLIGENCE Company Kitman Labs**
+Uslsoccer · 2026-06-18 · Performance Analytics
+
+The United Soccer League announced an expanded partnership with Irish performance intelligence company Kitman Labs to deploy athlete management systems across the league. The deal extends Kitman Labs' footprint in American soccer and demonstrates commercial traction for its platform.
+
+_Companies mentioned: Kitman Labs_
+
+_Tags: Kitman Labs, USL, partnership, performance intelligence, athlete management_
+
+[Read more](https://www.uslsoccer.com/news_article/show/1362828?referrer_id=3806180)
+
+**USL expands Kitman Labs partnership in multi-year deal - Sportcal**
+Sportcal · 2026-06-18 · Performance Analytics, Health, Fitness and Wellbeing
+
+Dublin-based Kitman Labs has expanded its partnership with United Soccer League in a multi-year deal covering athlete health and performance intelligence across the American soccer organization. The expanded agreement deepens Kitman Labs' penetration in the US professional sports market and validates its performance management platform.
+
+_Companies mentioned: Kitman Labs, United Soccer League_
+
+_Tags: Kitman Labs, USL, partnership, performance intelligence, US expansion_
+
+[Read more](https://www.sportcal.com/news/usl-expands-kitman-labs-partnership-in-multi-year-deal/)
+
+**Meet the Irish company trying to bring NBA-style analytics to grassroots sport**
+Business Post · 2026-06-18 · Performance Analytics, Club Management Software
+
+An Irish company is working to bring NBA-style analytics technology to grassroots sports clubs, democratising performance data previously accessible only to elite teams. The Business Post profile highlights the company's mission to make professional-level analytics affordable and accessible for community sports organisations.
+
+_Tags: Irish sportstech, grassroots sport, analytics, performance data, democratisation_
+
+[Read more](https://www.businesspost.ie/tech/meet-the-irish-company-trying-to-bring-nba-style-analytics-to-grassroots-sport/)
+
+**Kitman Labs expands with USL as it keeps enhancing one-stop athlete health hub**
+Sportsbusinessjournal · 2026-06-17 · Performance Analytics, Health, Fitness and Wellbeing
+
+Dublin-based Kitman Labs has announced a partnership with the United Soccer League (USL), adding the professional league to its athlete health and performance platform. This expands Kitman's footprint in US soccer and reinforces its position as a leading provider of integrated athlete management systems across multiple professional leagues.
+
+_Companies mentioned: Kitman Labs, USL_
+
+_Tags: Kitman Labs, USL, athlete health, performance analytics, US expansion_
+
+[Read more](https://www.sportsbusinessjournal.com/Articles/2026/06/17/kitman-labs-expands-with-usl-as-it-keeps-enhancing-one-stop-athlete-health-hub/)
+
+**Leeds United expand partnership with performance intelligence specialist - Insider Media**
+Insidermedia · 2026-06-17 · Performance Analytics
+
+Leeds United has extended its partnership with Kitman Labs, the Dublin-based performance intelligence platform provider. The expanded deal deepens Leeds' use of Kitman Labs' athlete management and injury prevention systems across the club's football operations.
+
+_Companies mentioned: Kitman Labs, Leeds United_
+
+_Tags: Kitman Labs, Leeds United, performance intelligence, partnership extension_
+
+[Read more](https://www.insidermedia.com/news/yorkshire/leeds-united-expand-partnership-with-performance-intelligence-specialist)
+
+**Ireland's SIS Pitches in action at nine of the World Cup stadiums - Irish Tech News**
+Irish Tech News · 2026-06-16 · Stadium & Event Tech
+
+Sligo company SIS Pitches has supplied artificial playing surfaces to nine World Cup stadiums, including venues hosting key tournament matches. The World Cup deployment represents significant international visibility and validation for the Irish stadium technology manufacturer.
+
+_Companies mentioned: SIS Pitches_
+
+_Tags: SIS Pitches, World Cup, stadium technology, artificial turf, international expansion_
+
+[Read more](https://irishtechnews.ie/irelands-sis-pitches-at-world-cup-stadiums/)
+
+**Irish company pitches in with playing surface for World Cup final**
+Irish Examiner · 2026-06-16 · Stadium & Event Tech
+
+The Irish Examiner highlights that SIS Pitches from Sligo is providing the playing surface for the World Cup final and eight other tournament venues. This represents a major international showcase for Irish sports surface innovation.
+
+_Companies mentioned: SIS Pitches_
+
+_Tags: SIS Pitches, World Cup Final, Stadium Technology, Sligo_
+
+[Read more](https://www.irishexaminer.com/business/companies/arid-41863641.html)
 
 **Ireland's SIS Pitches used at nine World Cup stadiums**
 RTÉ · 2026-06-16 · Stadium & Event Tech
@@ -138,115 +306,107 @@ _Tags: Torpey, Award, Clare, Wearables, Hurling_
 
 [Read more](https://www.clareecho.ie/torpey-leads-the-way-with-best-sports-business-award/)
 
-**Output Sports launches Program Uploader to Give Coaches Their Time Back**
-Insider.Fitt · 2026-05-28 · Performance Analytics, Sports Education & Coaching
+### Score 4: Irish sports adopting tech / Irish-adjacent (16)
 
-Dublin-based Output Sports has launched Program Uploader, a new feature designed to streamline workout programming and save coaches time by automating data entry. The tool integrates with Output's sensor-based force plate platform to accelerate athlete assessment workflows.
+**Derry City: How is Brandywell's new pitch 'World Cup standard'?**
+Bbc · 2026-06-25 · Stadium & Event Tech
 
-_Companies mentioned: Output Sports_
+Derry City FC installed a FIFA-certified hybrid pitch system meeting World Cup standards at the Brandywell Stadium. The pitch technology adoption demonstrates Irish League of Ireland clubs investing in infrastructure that matches international competition requirements.
 
-_Tags: Output Sports, Product Launch, Coaching, Automation, Program Uploader_
+_Tags: Derry City, stadium infrastructure, pitch technology, League of Ireland_
 
-[Read more](https://insider.fitt.co/press-release/output-sports-launches-program-uploader-to-give-coaches-their-time-back/)
+[Read more](https://www.bbc.com/sport/football/articles/cn0pnxqzgz5o)
 
-**Kitman Labs And Google Cloud Redefine Sports Analytics With My iP Launch**
-Isportconnect · 2026-05-28 · Performance Analytics
+**Daniel Farke gets further marginal gain as Leeds United embrace data revolution**
+Motleedsnews · 2026-06-24 · Performance Analytics
 
-Dublin-based Kitman Labs has partnered with Google Cloud to launch My iP, an AI-powered sports analytics platform that redefines injury prevention and performance optimization capabilities. The product leverages Google Cloud's infrastructure to deliver real-time athlete intelligence for professional sports organizations globally.
+Leeds United has expanded its use of Kitman Labs' performance analytics platform under manager Daniel Farke to drive data-led decision-making on player health and performance. The Dublin-based sportstech company continues to deepen its presence in English Premier League and Championship clubs.
 
-_Companies mentioned: Kitman Labs, Google Cloud_
+_Companies mentioned: Kitman Labs_
 
-_Tags: Kitman Labs, Google Cloud, AI, Product Launch, Analytics_
+_Tags: Kitman Labs, Leeds United, performance analytics, data_
 
-[Read more](https://www.isportconnect.com/kitman-labs-and-google-cloud-redefine-sports-analytics-with-my-ip-launch/)
+[Read more](https://motleedsnews.com/injuries/daniel-farke-gets-further-marginal-gain-as-leeds-united-embrace-data-revolution)
 
-**Irish sports tech scores in Australia and New Zealand - Irish Independent**
-Irish Independent · 2026-05-24 · Other / Emerging
+**How Ireland Intends to Harness the Power of Sport - Sport for Business**
+Sport for Business · 2026-06-24 · Other / Emerging
 
-⭐ One or more Irish sports technology companies have successfully expanded operations into Australia and New Zealand markets, as reported by the Irish Independent. The international growth demonstrates Irish sportstech competitiveness and validates product-market fit in the Asia-Pacific region.
-
-_Tags: international expansion, Australia, New Zealand, Irish sportstech_
-
-[Read more](https://www.independent.ie/business/irish-sports-tech-scores-in-australia-and-new-zealand/a/152621739.html)
-
-**Post Script: Statsports versus Piers Morgan; Zippay hits unexpected hurdle; Mr Justice Paddy McKillen**
-Business Post · 2026-05-23 · Wearables & Hardware, Performance Analytics
-
-Newry-based wearables firm STATSports is involved in a dispute with broadcaster Piers Morgan, as reported in the Business Post's media column. The coverage highlights the Northern Irish company's growing profile in elite athlete tracking technology.
-
-_Companies mentioned: STATSports, Zippay_
-
-_Tags: STATSports, wearables, athlete tracking, Northern Ireland, media_
-
-[Read more](https://www.businesspost.ie/uncategorized/post-script-statsports-versus-piers-morgan-zippay-hits-unexpected-hurdle-mr-justice-paddy-mckillen/)
-
-**MEET OUR SPONSORS – ClubSpot | Anglo Celt**
-Anglocelt · 2026-05-20 · Club Management Software
-
-ClubSpot, the Cavan-based club management software company, is featured as a sponsor in the Anglo Celt newspaper. The local coverage demonstrates ClubSpot's continued presence in the GAA grassroots market where it built its initial customer base.
-
-_Companies mentioned: ClubSpot_
-
-_Tags: ClubSpot, sponsorship, GAA, Cavan, club management_
-
-[Read more](https://www.anglocelt.ie/2026/05/20/meet-our-sponsors-clubspot/)
-
-**Sports Impact Technologies Wins Irish Sport Industy Award**
-Ucd · 2026-05-20 · Wearables & Hardware, Performance Analytics
-
-UCD spin-out Sports Impact Technologies won an award at the Federation of Irish Sport Industry Awards. The Dublin-based company develops athlete monitoring and impact detection technology for contact sports.
-
-_Companies mentioned: Sports Impact Technologies, University College Dublin, Federation of Irish Sport_
-
-_Tags: Sports Impact Technologies, UCD, Industry Awards, Athlete Monitoring_
-
-[Read more](https://www.ucd.ie/innovation/news-and-events/2026/sports-impact-sport-industry-award/)
-
-**Enterprise Ireland brings Irish sports tech to Oceania**
-Futurefive · 2026-05-19 · Other / Emerging
-
-Enterprise Ireland is leading a delegation of Irish sportstech companies to Australia and New Zealand as part of an Oceania market expansion initiative. This represents a coordinated push to help Irish sportstech firms access new markets in the Asia-Pacific region with government support.
+Sport for Business reports on Ireland's national strategy to leverage sport for economic and social development, including Enterprise Ireland's sportstech commercialisation initiatives. The piece outlines government and agency frameworks supporting Irish sports innovation and international expansion.
 
 _Companies mentioned: Enterprise Ireland_
 
-_Tags: Enterprise Ireland, international expansion, Oceania, trade mission, market access_
+_Tags: Enterprise Ireland, sports policy, Ireland, economic development_
 
-[Read more](https://futurefive.co.nz/story/enterprise-ireland-brings-irish-sports-tech-to-oceania)
+[Read more](https://sportforbusiness.com/how-ireland-intends-to-harness-the-power-of-sport/)
 
-**Enterprise Ireland brings Irish sports tech to Oceania**
-Channellife · 2026-05-19 · Other / Emerging
+**Irish AI Office Loses Market Surveillance Role - WILLIAM FRY**
+Williamfry · 2026-06-23 · Other / Emerging
 
-Enterprise Ireland is leading a delegation of Irish sports technology companies to Australia and New Zealand, marking a strategic push into the Oceania market. This government-backed trade mission demonstrates Ireland's ambition to establish its sportstech ecosystem in high-growth Asia-Pacific sports markets.
+The Irish AI Office has lost its market surveillance responsibilities under new regulatory arrangements, according to legal analysis from William Fry. This development affects how AI-driven Irish sportstech companies will be regulated and monitored for EU AI Act compliance.
 
-_Companies mentioned: Enterprise Ireland_
+_Companies mentioned: William Fry_
 
-_Tags: Enterprise Ireland, international expansion, Oceania, trade mission, Australia_
+_Tags: Irish AI Office, EU AI Act, regulation, William Fry, market surveillance_
 
-[Read more](https://channellife.com.au/story/enterprise-ireland-brings-irish-sports-tech-to-oceania)
+[Read more](https://www.williamfry.com/knowledge/irish-ai-office-loses-market-surveillance-role/)
 
-**Ireland’s sports tech powerhouses touch down in Australia and New Zealand, backed by Europe’s biggest sports VC - Medianet News Hub**
-Newshub.Medianet · 2026-05-18 · Other / Emerging
+**Leeds enhance data approach**
+Sports.Yahoo · 2026-06-23 · Performance Analytics
 
-Enterprise Ireland is leading a delegation of Irish sportstech companies to Australia and New Zealand, supported by a major European sports venture capital firm. The trade mission represents a coordinated push to expand Irish sportstech presence in the Oceania market.
+Leeds United has enhanced its data analytics approach, likely involving Irish sportstech company Kitman Labs based on the source attribution. The adoption demonstrates continued traction for Irish performance technology platforms with major European football clubs.
 
-_Companies mentioned: Enterprise Ireland_
+_Companies mentioned: Kitman Labs, Leeds United_
 
-_Tags: Enterprise Ireland, international expansion, Australia, New Zealand, trade mission_
+_Tags: Leeds United, Kitman Labs, data analytics, football_
 
-[Read more](https://newshub.medianet.com.au/2026/05/irelands-sports-tech-powerhouses-touch-down-in-australia-and-new-zealand-backed-by-europes-biggest-sports-vc/153926/)
+[Read more](https://sports.yahoo.com/articles/leeds-enhance-data-approach-151629092.html)
 
-**Galway-based company nominated for data science award**
-Advertiser · 2026-05-18 · Performance Analytics
+**UL and IRFU collaborate in research on tackle height in rugby**
+Limerickleader · 2026-06-19 · Performance Analytics, Health, Fitness and Wellbeing
 
-Galway-based sportstech company Orreco has been nominated for a data science award, recognizing its athlete analytics and biomarker intelligence work. The nomination highlights Orreco's contributions to evidence-based performance optimization through data science.
+University of Limerick and the Irish Rugby Football Union are collaborating on research into tackle height regulations and their impact on player safety. The partnership applies data and research methodologies to inform policy decisions in Irish rugby.
 
-_Companies mentioned: Orreco_
+_Tags: University of Limerick, IRFU, rugby research, tackle height, player safety_
 
-_Tags: Orreco, Galway, data science, award nomination_
+[Read more](https://www.limerickleader.ie/sport/rugby/ul-and-irfu-collaborate-in-research-on-tackle-height-in-rugby-8749807)
 
-[Read more](https://advertiser.ie/galway/article/94044/galway-based-company-nominated-for-data-science-award)
+**Smyth welcomes new Regulation of Artificial Intelligence Bill | Anglo Celt**
+Anglocelt · 2026-06-18 · Other / Emerging
 
-### Score 4: Irish sports adopting tech / Irish-adjacent (14)
+Irish TD Ossian Smyth has welcomed the new Regulation of Artificial Intelligence Bill, which will implement the EU AI Act framework in Ireland. The legislation establishes compliance requirements and governance standards that will directly affect Irish sportstech companies deploying AI in athlete monitoring, fan engagement, and performance prediction systems.
+
+_Tags: EU AI Act, Irish regulation, Ossian Smyth, artificial intelligence_
+
+[Read more](https://www.anglocelt.ie/2026/06/18/smyth-welcomes-new-regulation-of-artificial-intelligence-bill/)
+
+**Tech Tee Up 2026 nearly doubles attendance - Irish Tech News**
+Irish Tech News · 2026-06-17 · Other / Emerging
+
+Tech Tee Up 2026, an annual golf networking event for Ireland's technology community, nearly doubled its attendance this year. The event brings together tech entrepreneurs, investors, and industry leaders in a sports setting to facilitate ecosystem connections.
+
+_Tags: Tech Tee Up, networking, golf, tech community, event_
+
+[Read more](https://irishtechnews.ie/tech-tee-up-2026-nearly-doubles-attendance/)
+
+**Tech Tee Up 2026 nearly doubles attendance - Irish Tech News**
+Irish Tech News · 2026-06-17 · Other / Emerging
+
+Tech Tee Up 2026, an Irish technology sector golf networking event, nearly doubled its attendance this year. The event connects Ireland's tech ecosystem including potential sportstech participants and investors.
+
+_Tags: Tech Tee Up, Networking Event, Irish Tech_
+
+[Read more](https://irishtechnews.ie/tech-tee-up-2026-nearly-doubles-attendance/amp/)
+
+**Sporting Risk and BoyleSports sign player props and BetBuilder deal**
+Europeangaming · 2026-06-17 · Betting & Fantasy, Performance Analytics
+
+Irish bookmaker BoyleSports has signed a deal with sports analytics provider Sporting Risk to power player proposition betting and BetBuilder features. The partnership enables BoyleSports to offer more granular in-play betting markets driven by real-time data analytics.
+
+_Companies mentioned: BoyleSports, Sporting Risk_
+
+_Tags: BoyleSports, Sporting Risk, betting analytics, player props, BetBuilder_
+
+[Read more](https://europeangaming.eu/portal/press-releases/2026/06/17/207143/sporting-risk-and-boylesports-sign-player-props-and-betbuilder-deal/)
 
 **FAI hosts world’s first AI video referral system workshop - Daily Excelsior**
 Dailyexcelsior · 2026-06-13 · Performance Analytics
@@ -308,93 +468,105 @@ _Tags: Belfast, AI, engineering hub, US company, expansion_
 
 [Read more](https://www.msn.com/en-gb/money/other/a-strong-vote-of-confidence-in-northern-ireland-us-sports-tech-giant-to-expand-belfast-engineering-hub-in-ai-and-data-push/ar-AA24g9Tp)
 
-**Invest NI offer £400k to US sports tech group’s Belfast operation weeks after it lands $100m in new funding**
-Irishnews · 2026-05-28 · Performance Analytics
+### Score 3: European SportsTech relevant to Irish audience (32)
 
-Invest NI has offered £400k to support Teamworks' Belfast R&D operation, following the US sports technology company's $100m Series E funding round. The investment supports a three-year innovation project leveraging Northern Ireland engineering talent for global athlete management platform development.
+**Irish Conference League row: IFA accused over Amateur League running 'professional' tier - Belfast Telegraph**
+Belfasttelegraph · 2026-06-26 · Club Management Software
 
-_Companies mentioned: Invest NI_
+The Irish FA faces accusations over governance of the Irish Conference League, with claims the Amateur League is running a 'professional' tier that violates organizational structures. The dispute highlights governance challenges in Irish grassroots football administration that could impact club management and technology adoption.
 
-_Tags: Teamworks, Invest NI, Belfast, R&D, Funding_
+_Tags: IFA, governance, Irish Conference League, amateur football_
 
-[Read more](https://www.irishnews.com/news/business/invest-ni-offer-400k-to-us-sports-tech-groups-belfast-operation-weeks-after-it-lands-100m-in-new-funding-3YCRVN73KNEF5GUMF4XOPF332M/)
+[Read more](https://www.belfasttelegraph.co.uk/sport/chief-patrick-nelson-rejects-worst-piece-of-governance-in-ifa-claim-over-new-conference-league-in-tense-agm-exchange/a/157806450.html)
 
-**US-headquartered sports technology company says Northern Ireland talent will power next phase of global innovation**
-Newsletter · 2026-05-28 · Other / Emerging
+**Tottenham Hotspur announces TCS as Digital Transformation Partner - Irish Tech News**
+Irish Tech News · 2026-06-24 · Fan Engagement, Club Management Software
 
-US-headquartered sports technology company announces Northern Ireland talent will drive its next phase of global innovation, signalling expansion of operations in the region. The move highlights Northern Ireland's growing role as a talent hub for international sportstech firms seeking European R&D capabilities.
+Tottenham Hotspur partnered with Tata Consultancy Services as digital transformation partner to enhance fan experiences and club operations. The Premier League partnership demonstrates enterprise-scale digital strategies relevant to Irish clubs evaluating similar platforms.
 
-_Tags: Northern Ireland, R&D, US expansion, talent_
+_Companies mentioned: Tottenham Hotspur, TCS, Tata Consultancy Services_
 
-[Read more](https://www.newsletter.co.uk/business/a-strong-vote-of-confidence-in-northern-ireland-us-sports-tech-giant-to-expand-belfast-engineering-hub-in-ai-and-data-push-8644043)
+_Tags: Tottenham Hotspur, TCS, digital transformation, Premier League_
 
-**Post Script: Statsports versus Piers Morgan; Zippay hits unexpected hurdle; Mr Justice Paddy McKillen**
-Business Post · 2026-05-23 · Performance Analytics, Wearables & Hardware
+[Read more](https://irishtechnews.ie/tottenham-hotspur-tcs-digital-transformation/)
 
-The Business Post reported on Newry-based STATSports in its Post Script column, covering a dispute involving Piers Morgan alongside other Irish business news. While not a major product or funding announcement, it provides visibility into the Northern Irish GPS tracking company's business activities.
+**Tottenham Hotspur announces TCS as Digital Transformation Partner - Irish Tech News**
+Irish Tech News · 2026-06-24 · Fan Engagement
 
-_Companies mentioned: STATSports_
+Tottenham Hotspur has appointed TCS as its digital transformation partner to enhance fan experiences and operational technology. Irish Tech News coverage of this Premier League club partnership reflects European sportstech trends relevant to Irish fan engagement providers.
 
-_Tags: STATSports, Newry, media, business news_
+_Companies mentioned: TCS_
 
-[Read more](https://www.businesspost.ie/analysis-opinion/post-script-statsports-versus-piers-morgan-zippay-hits-unexpected-hurdle-mr-justice-paddy-mckillen/)
+_Tags: Tottenham Hotspur, TCS, digital transformation, Premier League_
 
-**TicketCo Extends Partnership with Waterford FC - Sport for Business**
-Sport for Business · 2026-05-21 · Stadium & Event Tech
+[Read more](https://irishtechnews.ie/tottenham-hotspur-tcs-digital-transformation/amp/)
 
-Waterford FC has extended its partnership with TicketCo, a digital ticketing platform serving the League of Ireland club. The renewal demonstrates how Irish football clubs are maintaining technology partnerships to digitize fan access and reduce operational friction.
+**Pride Houses an Important Element of Global Event Fan Experience - Sport for Business**
+Sport for Business · 2026-06-24 · Fan Engagement, Stadium & Event Tech
 
-_Companies mentioned: TicketCo, Waterford FC_
+Sport for Business examines Pride Houses at global sporting events as inclusive fan engagement infrastructure and hospitality strategy. The analysis covers how major events incorporate dedicated spaces to enhance experience for LGBTQ+ fans and stakeholders.
 
-_Tags: TicketCo, Waterford FC, ticketing, League of Ireland, partnership_
+_Tags: fan engagement, Pride Houses, event hospitality, inclusion_
 
-[Read more](https://sportforbusiness.com/ticketco-extends-partnership-with-waterford-fc/)
+[Read more](https://sportforbusiness.com/pride-houses-an-important-element-of-global-event-fan-experience/)
 
-**Stegawave launches real-time anti-piracy tech**
-Broadcastnow · 2026-05-20 · Media & Broadcasting
+**Manchester United secures land for 100,000-seat stadium**
+Business Post · 2026-06-23 · Stadium & Event Tech
 
-Stegawave, an Irish company, has launched real-time anti-piracy technology for broadcasters to combat illegal streaming. The solution addresses content protection challenges for sports broadcasters and rights holders, a critical issue in the Irish and global sports media landscape.
+Manchester United has secured land for a proposed 100,000-capacity stadium development, potentially becoming the largest club stadium project in Europe. The scale of infrastructure investment signals opportunities for stadium technology providers including Irish companies with relevant expertise.
 
-_Companies mentioned: Stegawave_
+_Companies mentioned: Manchester United_
 
-_Tags: Stegawave, Anti-piracy, Broadcast Technology, Content Protection_
+_Tags: Manchester United, stadium development, infrastructure_
 
-[Read more](https://www.broadcastnow.co.uk/tech-innovation/stegawave-launches-real-time-anti-piracy-tech/5217005.article)
+[Read more](https://www.businesspost.ie/uncategorized/manchester-united-secures-land-for-100000-seat-stadium/)
 
-**Anticipation Builds for Tonight’s Federation of Irish Sport Industry Awards - Sport for Business**
-Sport for Business · 2026-05-19 · Other / Emerging
+**BBC Audio | The Inquiry | Is technology ruining sport?**
+Bbc · 2026-06-23 · Stadium & Event Tech, Other / Emerging
 
-The Federation of Irish Sport is hosting its annual Industry Awards, recognizing achievements across the Irish sports sector. The awards provide visibility for innovation and excellence within Ireland's sports ecosystem including technology adoption.
+BBC explores whether technology is negatively impacting sport through VAR, hawk-eye, and other officiating systems. The debate examines the balance between accuracy and flow, relevant to leagues and sports organisations implementing similar technologies.
 
-_Companies mentioned: Federation of Irish Sport_
+_Tags: VAR, sports technology debate, officiating technology_
 
-_Tags: Federation of Irish Sport, awards, Irish sports industry_
+[Read more](https://www.bbc.com/audio/play/w3ct98pt)
 
-[Read more](https://sportforbusiness.com/anticipation-builds-for-tonights-federation-of-irish-sport-industry-awards/)
+**Future Proofing Performance: Data is Only as Good as the Story it Tells - Sport for Business**
+Sport for Business · 2026-06-18 · Performance Analytics
 
-**Group Training Program Partners - Trend Hunter**
-Trendhunter · 2026-05-18 · Wearables & Hardware, Health, Fitness and Wellbeing
+Sport for Business explores how sports performance data requires effective storytelling and contextual analysis to deliver actionable insights for teams and athletes. The article addresses broader European trends in performance analytics relevant to Irish practitioners.
 
-Dublin-based Output Sports has formed a partnership with HYROX to deliver group training program solutions using its movement analysis technology. The collaboration extends Output's platform into the mass-participation fitness market through HYROX's global network.
+_Tags: Performance Analytics, Data Storytelling, Sports Data, Industry Insight_
 
-_Companies mentioned: Output Sports, HYROX_
+[Read more](https://sportforbusiness.com/future-proofing-performance-data-is-only-as-good-as-the-story-it-tells/)
 
-_Tags: Output Sports, HYROX, partnership, group training, fitness_
+**Tech Stack: Atlético Madrid, LA28 and more**
+Thestadiumbusiness · 2026-06-18 · Stadium & Event Tech
 
-[Read more](https://www.trendhunter.com/amp/trends/group-training-programs)
+Stadium Business published a technology roundup covering recent tech stack implementations at Atlético Madrid, LA28, and other global venues. The overview provides European stadium technology trends relevant to Irish venue operators and tech providers.
 
-**Performance Coaching Platforms - Trend Hunter**
-Trendhunter · 2026-05-18 · Performance Analytics, Sports Education & Coaching
+_Tags: Stadium Technology, Atlético Madrid, LA28_
 
-Trend Hunter has published analysis on performance coaching platforms, likely featuring technology for athlete development and training optimization. The report examines digital tools transforming how coaches deliver programming and track athlete progress.
+[Read more](https://www.thestadiumbusiness.com/2026/06/18/tech-stack-atletico-madrid-la28-and-more/)
 
-_Companies mentioned: Output Sports_
+**Saudis seek EU approval for $55 billion EA deal, decision by July 22 - Reuters**
+Reuters · 2026-06-17 · Esports & Gaming
 
-_Tags: performance coaching, Output Sports, platforms, trend analysis_
+Saudi Arabia's Public Investment Fund is seeking EU regulatory approval for its $55 billion acquisition of Electronic Arts, with a decision expected by July 22. The deal would represent one of the largest gaming industry acquisitions and could reshape the European sports gaming and esports landscape, affecting distribution and investment patterns relevant to Irish companies in the sector.
 
-[Read more](https://www.trendhunter.com/trends/output-program)
+_Companies mentioned: Electronic Arts_
 
-### Score 3: European SportsTech relevant to Irish audience (34)
+_Tags: Electronic Arts, Saudi Arabia, M&A, gaming, EU approval_
+
+[Read more](https://www.reuters.com/legal/litigation/saudis-seek-eu-approval-55-billion-ea-deal-decision-by-july-22-2026-06-17/)
+
+**Ethics, Technology, Sport and Being Human - Sport for Business**
+Sport for Business · 2026-06-17 · Other / Emerging
+
+Sport for Business has published commentary examining ethical considerations at the intersection of technology, sport, and human performance. The analysis explores governance and philosophical questions relevant to sportstech development across European markets.
+
+_Tags: ethics, sports technology, governance, commentary_
+
+[Read more](https://sportforbusiness.com/ethics-technology-sport-and-being-human/)
 
 **Paris-based Rocapine raises €11.2 million to scale wellness apps that “hold instead of hook” | EU-Startups**
 EU-Startups · 2026-06-16 · Health, Fitness and Wellbeing
@@ -614,134 +786,6 @@ _Tags: horse racing, fan engagement, digital, Ireland, research_
 
 [Read more](https://www.irishsun.com/newsr/279092406)
 
-**Irish Sport on Social Media Monthly Report - April 2026 on TikTok - Sport for Business**
-Sport for Business · 2026-05-29 · Fan Engagement, Media & Broadcasting
-
-Sport for Business released its April 2026 social media report showing the second-most active month on record with over 15,400 posts across platforms by member organizations, focusing on TikTok performance. The report provides insight into digital engagement trends within the Irish sports ecosystem.
-
-_Companies mentioned: Sport for Business_
-
-_Tags: social media, TikTok, analytics, Irish sports, Sport for Business_
-
-[Read more](https://sportforbusiness.com/irish-sport-on-social-media-monthly-report-april-2026-on-tiktok/?utm_source=rss&utm_medium=rss&utm_campaign=irish-sport-on-social-media-monthly-report-april-2026-on-tiktok)
-
-**Irish Sport on Social Media Monthly Report - April 2026 on Instagram - Sport for Business**
-Sport for Business · 2026-05-28 · Fan Engagement, Media & Broadcasting
-
-Sport for Business published its April 2026 Instagram social media report, part of broader analysis showing over 15,400 posts across platforms by Irish sports organizations. The report tracks digital engagement and content performance within the Irish sports ecosystem.
-
-_Companies mentioned: Sport for Business_
-
-_Tags: social media, Instagram, analytics, Irish sports, Sport for Business_
-
-[Read more](https://sportforbusiness.com/irish-sport-on-social-media-monthly-report-april-2026-on-instagram/?utm_source=rss&utm_medium=rss&utm_campaign=irish-sport-on-social-media-monthly-report-april-2026-on-instagram)
-
-**Teamworks Innovations strengthens its commitment to Northern Ireland with a three-year R&D project**
-Investni · 2026-05-28 · Performance Analytics
-
-Teamworks Innovations has committed to a three-year R&D project in Northern Ireland with support from Invest Northern Ireland, focusing on sports technology development. The project will leverage local engineering talent to build products for the global sports operations market.
-
-_Companies mentioned: Teamworks Innovations, Invest Northern Ireland_
-
-_Tags: Teamworks, Invest NI, R&D, Northern Ireland, Belfast_
-
-[Read more](https://www.investni.com/media-centre/news/teamworks-innovations-strengthens-its-commitment-northern-ireland-three-year-rd)
-
-**MediaPLUS: Federation of Irish Sport Industry Awards highlight economic impact - Business Plus**
-Business Plus · 2026-05-21 · Other / Emerging
-
-The Federation of Irish Sport Industry Awards highlighted the growing economic contribution of Ireland's sports sector, recognizing leaders and organizations driving commercialization. The event underscores how Ireland's sports industry is professionalizing and creating opportunities for technology and service providers.
-
-_Companies mentioned: Federation of Irish Sport_
-
-_Tags: Federation of Irish Sport, awards, economic impact, sports industry, Ireland_
-
-[Read more](https://businessplus.ie/media-plus/mediaplus-federation-of-irish-sport/)
-
-**Muybridge raises $16M Series A to scale software-defined camera technology**
-Tech · 2026-05-21 · Media & Broadcasting
-
-Muybridge, a European company developing software-defined camera technology for live sports broadcasting, raised $16 million in Series A funding. The technology enables remote production and automated camera control, relevant to sports media infrastructure modernisation across European leagues and broadcasters.
-
-_Companies mentioned: Muybridge_
-
-_Tags: Muybridge, camera technology, broadcasting, Series A, funding_
-
-[Read more](https://tech.eu/2026/05/21/muybridge-raises-16m-series-a-to-scale-software-defined-camera-technology/)
-
-**Federation of Irish Sport Industry Awards highlight sector’s growing economic impact**
-Business Plus · 2026-05-20 · Other / Emerging
-
-The Federation of Irish Sport Industry Awards highlighted the sector's expanding economic impact across Ireland, recognising organisations contributing to sports development and business growth. The awards provide context for the market environment in which Irish sportstech companies operate and seek customers.
-
-_Companies mentioned: Federation of Irish Sport_
-
-_Tags: Federation of Irish Sport, sports economy, industry awards, Ireland_
-
-[Read more](https://businessplus.ie/media-plus/federation-of-irish-sport-industry-awards-win/)
-
-**45th MayFest Celebrates the Power of Sport for Vision Impaired - Sport for Business**
-Sport for Business · 2026-05-20 · Other / Emerging
-
-Sport for Business covered the 45th MayFest event celebrating sport for vision-impaired athletes in Ireland. While the event may feature assistive or adaptive sports technology, the primary focus appears to be on participation and inclusion rather than sportstech innovation.
-
-_Tags: MayFest, vision impaired, adaptive sports, inclusion_
-
-[Read more](https://sportforbusiness.com/45th-mayfest-celebrates-the-power-of-sport-for-vision-impaired/)
-
-**Winners of the Federation of Irish Sport Industry Awards - Sport for Business**
-Sport for Business · 2026-05-20 · Other / Emerging
-
-The Federation of Irish Sport Industry Awards has announced its winners, recognising achievements across Irish sport sectors. The awards ceremony highlights contributions to the development of Ireland's sports industry infrastructure and innovation.
-
-_Companies mentioned: Federation of Irish Sport_
-
-_Tags: Federation of Irish Sport, awards, sports industry, recognition, Ireland_
-
-[Read more](https://sportforbusiness.com/winners-of-the-federation-of-irish-sport-industry-awards/)
-
-**EU selects EQT to manage new €5bn technology fund - luxtimes.lu**
-Luxtimes · 2026-05-19 · Other / Emerging
-
-The European Union has selected EQT to manage a new €5 billion technology fund supporting European tech companies. The fund represents significant new capital availability for European technology firms including potential sportstech investments.
-
-_Companies mentioned: EQT_
-
-_Tags: EQT, EU funding, technology fund, venture capital_
-
-[Read more](https://www.luxtimes.lu/businessandfinance/eu-selects-eqt-to-manage-new-5bn-technology-fund/152091948.html)
-
-**First 200 dodgy-box owners targeted by Sky legal letters - Irish Independent**
-Irish Independent · 2026-05-19 · Media & Broadcasting
-
-Sky sent legal letters to the first 200 dodgy-box owners in Ireland as part of anti-piracy enforcement efforts. Relevant to Irish sports broadcasting rights protection and media technology regulation.
-
-_Companies mentioned: Sky_
-
-_Tags: Sky, anti-piracy, broadcasting, legal action_
-
-[Read more](https://www.independent.ie/irish-news/first-200-dodgy-box-owners-targeted-by-sky-legal-letters/a/152042073.html)
-
-**Flutter rival DraftKings beats revenue expectations**
-Business Post · 2026-05-19 · Betting & Fantasy
-
-DraftKings, a major competitor to Irish-headquartered Flutter Entertainment, has exceeded revenue expectations in its latest quarterly results. This provides relevant market context for the Irish sports betting and fantasy ecosystem where Flutter is a dominant global player.
-
-_Companies mentioned: DraftKings, Flutter_
-
-_Tags: DraftKings, Flutter, sports betting, revenue, earnings_
-
-[Read more](https://www.businesspost.ie/article/flutter-rival-draftkings-beats-revenue-expectations/)
-
-**Performance Coaching Platforms - Trend Hunter**
-Trendhunter · 2026-05-18 · Performance Analytics, Sports Education & Coaching
-
-Trend Hunter has published a report on performance coaching platforms as an emerging category in sports technology. While the article does not mention Irish companies, performance coaching and athlete monitoring is a core vertical for Irish sportstech firms like Output Sports and Orreco.
-
-_Tags: performance coaching, platforms, trend analysis_
-
-[Read more](https://www.trendhunter.com/amp/trends/output-program)
-
 
 ---
 
@@ -760,44 +804,40 @@ _Tags: performance coaching, platforms, trend analysis_
 **WHOOP** (1)
 - [Director, F1](https://jobs.ashbyhq.com/whoop/f4de2dcc-94d3-48df-8fc1-b838cd4d7cc8) — Ireland · Sales & Business Development
 
-### lead (11)
+### lead (8)
 
 **EA Sports** (2)
-- [Development Director - EA Sports FC](https://www.linkedin.com/jobs/view/development-director-ea-sports-fc-at-electronic-arts-ea-4153880576/) — Galway · Operations
 - [Content Operations Lead](https://www.linkedin.com/jobs/view/content-operations-lead-at-electronic-arts-ea-4218287426/) — Galway · Operations
+- [Development Director - EA Sports FC](https://www.linkedin.com/jobs/view/development-director-ea-sports-fc-at-electronic-arts-ea-4153880576/) — Galway · Operations
 
-**Flutter Entertainment** (3)
+**Flutter Entertainment** (2)
 - [AI Engineering Manager](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/AI-Engineering-Manager_JR138242-1) — Multiple Locations · Engineering
 - [Senior Strategic Planning Manager - AI](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Leeds-UK/Senior-Strategic-Planning-Manager---AI_JR138818-1) — Multiple Locations · Operations
-- [Senior Marketing Planning Manager - Portfolio (Fixed-Term Contract)](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Head-of-Marketing-Portfolio-Planning---12m-FTC_JR137322-2) — Dublin · Marketing & Content
 
 **Stats Perform** (2)
-- [Senior Team Lead](https://www.linkedin.com/jobs/view/senior-team-lead-at-stats-perform-4339077155/) — Limerick · Operations
 - [Customer Success Manager (Horse Racing)](https://www.linkedin.com/jobs/view/customer-success-manager-horse-racing-at-stats-perform-4203791587/) — Limerick · Customer Success
+- [Senior Team Lead](https://www.linkedin.com/jobs/view/senior-team-lead-at-stats-perform-4339077155/) — Limerick · Operations
 
-**WHOOP** (4)
-- [Membership Services Team Lead- Overnight](https://jobs.ashbyhq.com/whoop/70aa573e-c309-48de-aef6-e5e92966fdb9) — Limerick · hybrid · Customer Success
-- [Membership Services Team Lead- Days](https://jobs.ashbyhq.com/whoop/5254f5a5-5ff3-44bb-a9cb-6ddeb24be19b) — Limerick · hybrid · Customer Success
+**WHOOP** (2)
 - [UK/IE Senior Sales Manager](https://jobs.ashbyhq.com/whoop/ad53ed15-0fde-449f-95d0-ee4bf3a5fd3b) — UK/Ireland · remote · Sales & Business Development
 - [Senior Lead, International Brand Media](https://jobs.ashbyhq.com/whoop/318319a2-7233-4c06-bca2-a75008e21c59) — Dublin · remote · Marketing & Content
 
-### mid (7)
+### mid (5)
 
 **EA Sports** (1)
 - [Business Analyst](https://www.linkedin.com/jobs/view/business-analyst-at-electronic-arts-ea-4218290094/) — Galway · Data & Analytics
 
-**Flutter Entertainment** (6)
+**Flutter Entertainment** (3)
 - [Full Stack Engineer](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Full-Stack-Engineer_JR138241-1) — Multiple Locations · Engineering
-- [Associate Racing Trader (Part- Time)](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Associate-Racing-Trader--Part--Time-_JR139251-1) — Dublin · onsite · Sales & Business Development
 - [Global Sports Trader](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Global-Sports-Trader_JR139410-1) — Dublin · Sales & Business Development
-- [Risk Trader](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Risk-Trader_JR139216-1) — Dublin · Other
-- [AI Engineer - Automation, Transformation & AI](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/AI-Engineer---Automation--Transformation---AI_JR139189-1) — Dublin · Data & Analytics
-- [UKI Paid Search Executive](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Leeds-UK/UKI-Paid-Search-Executive_JR138876) — Multiple Locations · Marketing & Content
+- [Associate Risk Trader](https://flutterbe.wd3.myworkdayjobs.com/en-US/FlutterUKI_External/job/Dublin-Ireland/Associate-Risk-Trader_JR139221-2) — Dublin · onsite · Other
 
-### senior (3)
+**Kitman Labs** (1)
+- [Software Engineer](https://jobs.lever.co/kitmanlabs/b6bdf423-41c4-4425-b950-11ed6d82c489) — Dublin · Engineering
 
-**Kitman Labs** (2)
-- [Senior QA Engineer](https://jobs.lever.co/kitmanlabs/3af59790-3b32-4519-bc79-6373de53c062) — Dublin · Engineering
+### senior (2)
+
+**Kitman Labs** (1)
 - [Senior Frontend Engineer](https://jobs.lever.co/kitmanlabs/49afcba3-4cad-4e19-8a01-cf4a6b33e438) — Dublin · Engineering
 
 **Riot Games** (1)
