@@ -167,3 +167,82 @@ def upsert_event(extraction: dict, source: str) -> tuple[str | None, bool]:
     except Exception as exc:
         log.error("upsert_event fallback failed for '%s': %s", url[:80], exc)
         return None, False
+
+
+def mark_event_auto_rejected(event_id: str, reason: str) -> bool:
+    """Force status='rejected' on an event — but only if it's still 'pending'.
+
+    The `.eq("status", "pending")` guard means this never overwrites a human's
+    prior verified/rejected decision on a re-scraped row. Returns True if the
+    row was actually flipped (False if it was already non-pending, or on error).
+    """
+    client = _get_client()
+    if client is None or not event_id:
+        return False
+    try:
+        result = (
+            client.table("events")
+            .update({"status": "rejected", "rejected_reason": reason})
+            .eq("id", event_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        return bool(result.data)
+    except Exception as exc:
+        log.warning("mark_event_auto_rejected failed for %s: %s", event_id, exc)
+        return False
+
+
+def collapse_recurring_series(name: str, recurrence: str | None) -> list[str]:
+    """Keep only the soonest-dated pending occurrence of a recurring event series.
+
+    A "series" is defined as pending events sharing the same `name` (exact,
+    case-sensitive match — conservative by design, no fuzzy matching) with a
+    non-null `recurrence` and a non-null `date`. All but the soonest-dated row
+    are rejected with reason 'recurring_series_superseded'. Undated pending
+    duplicates are left alone (can't determine ordering).
+
+    Returns the list of event ids that were rejected by this call.
+    """
+    if not recurrence or not name:
+        return []
+    client = _get_client()
+    if client is None:
+        return []
+    try:
+        result = (
+            client.table("events")
+            .select("id, date")
+            .eq("status", "pending")
+            .eq("name", name)
+            .not_.is_("recurrence", "null")
+            .not_.is_("date", "null")
+            .execute()
+        )
+        rows = result.data
+    except Exception as exc:
+        log.warning("collapse_recurring_series query failed for %r: %s", name, exc)
+        return []
+
+    if len(rows) <= 1:
+        return []
+
+    rows_sorted = sorted(rows, key=lambda r: r["date"])
+    reject_ids = [r["id"] for r in rows_sorted[1:]]  # keep soonest, drop the rest
+
+    rejected: list[str] = []
+    for rid in reject_ids:
+        try:
+            result = (
+                client.table("events")
+                .update({"status": "rejected", "rejected_reason": "recurring_series_superseded"})
+                .eq("id", rid)
+                .eq("status", "pending")
+                .execute()
+            )
+            if result.data:
+                rejected.append(rid)
+        except Exception as exc:
+            log.warning("failed to collapse recurring event %s: %s", rid, exc)
+
+    return rejected

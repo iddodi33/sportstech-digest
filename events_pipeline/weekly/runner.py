@@ -23,6 +23,9 @@ class ExtractionResult:
     event_id: str | None = None
     error_message: str | None = None
     runtime_seconds: float = 0.0
+    # Set when a post-upsert step auto-rejected this row: 'ai_tech_ireland' or
+    # 'recurring_duplicate'. None means it's genuinely pending for review.
+    auto_rejected_reason: str | None = None
 
 
 def run_extractions(
@@ -36,7 +39,11 @@ def run_extractions(
     Returns a list of ExtractionResult, one per URL.
     """
     from events_pipeline.extractor import extract_event, ExtractorError
-    from events_pipeline.supabase_events_client import upsert_event
+    from events_pipeline.supabase_events_client import (
+        upsert_event,
+        mark_event_auto_rejected,
+        collapse_recurring_series,
+    )
 
     results: list[ExtractionResult] = []
     total = len(url_to_source)
@@ -69,6 +76,34 @@ def run_extractions(
                     "[runner] %s [%s]: %s — %s",
                     action, category, result.name or "?", url[:60],
                 )
+
+                # ai_tech_ireland's real approval rate is ~1% (see STATUS.md
+                # 2026-07-14 audit) — Claude still tags it for the audit trail
+                # in `classification`, but the runner auto-rejects rather than
+                # queuing it for review. Guarded on still-pending so a human's
+                # earlier decision on a re-scraped row is never overwritten.
+                if event_id and category == "ai_tech_ireland":
+                    if mark_event_auto_rejected(event_id, "ai_tech_ireland_auto_reject"):
+                        result.auto_rejected_reason = "ai_tech_ireland"
+                        log.info(
+                            "[runner] auto-rejected (ai_tech_ireland): %s — %s",
+                            result.name or "?", url[:60],
+                        )
+
+                # Recurring-series collapse: a weekly/monthly meetup re-enters
+                # pending every run under a distinct URL (each occurrence is a
+                # genuinely distinct event page, not a de-dup bug) — only the
+                # soonest upcoming instance of a same-name series is kept.
+                recurrence = extraction.get("recurrence")
+                name = extraction.get("name")
+                if event_id and recurrence and name and result.auto_rejected_reason is None:
+                    superseded_ids = collapse_recurring_series(name, recurrence)
+                    if event_id in superseded_ids:
+                        result.auto_rejected_reason = "recurring_duplicate"
+                        log.info(
+                            "[runner] auto-rejected (recurring duplicate, sooner instance already pending): %s — %s",
+                            result.name or "?", url[:60],
+                        )
 
         except ExtractorError as exc:
             result.status        = "failed"

@@ -4,8 +4,11 @@ Execution order:
   1. All 5 source adapters (discover event detail URLs)
   2. Global dedup across adapters
   3. Per-URL: extract with Claude, upsert relevant events to hub Supabase
-  4. DB snapshot
-  5. SendGrid summary email
+     (ai_tech_ireland category and recurring-series duplicates auto-rejected
+     inline — see weekly/runner.py)
+  4. Archive sweep: reject pending events whose date has passed
+  5. DB snapshot
+  6. SendGrid summary email
 
 Flags:
   --skip-adapters    skip discovery, go straight to email (shows 0 extractions)
@@ -108,6 +111,7 @@ def main(
     from events_pipeline.weekly.snapshot import fetch_snapshot
     from events_pipeline.weekly.email_builder import build_email
     from events_pipeline.weekly.sendgrid_client import send_email
+    from events_pipeline.run_archive_sweep import run_sweep
 
     adapter_results = []
 
@@ -169,15 +173,24 @@ def main(
     else:
         log.info("No URLs to extract.")
 
-    # ── 4. Snapshot ────────────────────────────────────────────────────────────
+    # ── 4. Archive sweep ───────────────────────────────────────────────────────
+    log.info("=== Starting archive sweep ===")
+    sweep_result = run_sweep(dry_run=False)
+    log.info(
+        "=== Archive sweep complete: %d rejected (stale date), runtime so far %s ===",
+        sweep_result.get("rejected", 0), _fmt_runtime(time.time() - wall_t0),
+    )
+
+    # ── 5. Snapshot ────────────────────────────────────────────────────────────
     log.info("Fetching DB snapshot...")
     snapshot = fetch_snapshot(client)
 
-    # ── 5. Email ───────────────────────────────────────────────────────────────
+    # ── 6. Email ───────────────────────────────────────────────────────────────
     total_runtime = time.time() - wall_t0
     html_body = build_email(
         adapter_results=adapter_results,
         extraction_results=extraction_results,
+        sweep_result=sweep_result,
         snapshot=snapshot,
         run_started_at=run_started_at,
         total_runtime_seconds=total_runtime,
