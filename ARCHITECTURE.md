@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — sportstech-digest
 
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-18*
 
 Technical reference. For recent changes and open bugs see `STATUS.md`.
 
@@ -97,6 +97,27 @@ All adapters follow the `BaseAdapter` pattern in `adapters/base.py`: `fetch()` r
 **Phenom** — Adapter code exists. Zero active sources currently.
 
 **LinkedIn/Serper** — See dedicated section below.
+
+---
+
+## Duplicate Listing Collapse (added 2026-07-18)
+
+`dedupe_identical_listings(jobs, source_name)` in `adapters/base.py` runs in every adapter's
+`run()` — `BaseAdapter`, `LinkedInAdapter`, and `ApifyLinkedInAdapter` — right after `fetch()`
+and before the upsert loop. Collapses jobs identical on (normalised title, normalised
+location): title must match exactly after lowercase/whitespace normalisation, AND location
+must be null/blank on both sides or match exactly after the same normalisation. Keeps the
+earliest-seen (first) occurrence; logs how many were dropped per source.
+
+Deliberately conservative — a shared generic title across genuinely different locations is
+**not** collapsed, since those are distinct real openings. Motivating case (VALD, breezy):
+the identical "Business Development Manager" posted once per country (France, Switzerland,
+Croatia, Astana, Serbia, Poland, Saudi Arabia, ...). Verified live: 56 raw VALD jobs, 0
+dropped, because every one of those 45+3 near-identical-title postings has a genuinely
+different `location_raw`. This rule only fires on a true same-title-same-location repeat
+(e.g. a duplicate insert race); the VALD-style "same role blasted across every office"
+pattern remains a geography/relevance concern, not a dedupe one, and was handled by the
+operator directly (manual `duplicate_listing_geo` rejection) rather than in code.
 
 ---
 

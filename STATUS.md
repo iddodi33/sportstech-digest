@@ -1,8 +1,148 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-18*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-07-18 — jobs-cleanup brief: premise corrections, dedupe, batch-reject
+
+Brief: after the 2026-07-17 weekly run, 164 jobs landed in pending, 162 of them
+non-allowlisted-FDI (Super Technologies 127, VALD 27, 2K 5, European Tour 3). User had
+already deactivated Super Technologies' source and manually cleaned the queue by hand
+before this session. Five things were requested; three of the five diagnoses didn't match
+the live DB when checked, which changed the plan significantly.
+
+### 0. Critical finding: 6 commits + 5 new files had never reached `origin/main`
+
+Before touching any of the five items, `git status` showed local `main` 6 commits ahead of
+`origin/main` (`b999d8f` through `97a7e5f` — the entire 2026-06-30 LinkedIn stale-job fix and
+the 2026-07-14 classifier office-slug fix), plus five **untracked** files representing the
+entire 2026-07-14 Apify-migration/relevance-filter/events-cleanup session
+(`apify_linkedin.py`, `relevance_filter.py`, `run_linkedin_apify.py`, `test_apify_linkedin.py`,
+`events_pipeline/run_archive_sweep.py`). Since GitHub Actions runs off `origin/main`, **every
+scheduled run — including 2026-07-17 — executed pre-fix code.** This directly explains item 3
+below (Hexis tracking) and means STATUS.md's own claims of "fixed" for the 06-30/07-14 work
+had never actually shipped. Origin had also independently gained 30+ automated bot commits
+(`daily_monitor_seen.json` / newsletter-source / jobs CSV updates from the daily/monthly
+crons) that local didn't have — a clean, no-conflict merge (disjoint file sets). Merged and
+pushed with the user's explicit go-ahead; all prior "uncommitted work" is now committed in
+logical grouped commits and live on `origin/main`.
+
+### 1. FDI null-location gate — dropped, premise didn't hold
+
+Brief's diagnosis: non-allowlisted FDI jobs with `location_raw IS NULL` were defaulting to
+"allow" and skipping the Haiku relevance verdict. Checked directly against the hub DB before
+writing anything (per CLAUDE.md's "verify before destructive SQL"): **zero** non-allowlisted-FDI
+jobs, ever, have a null `location_raw` (checked across all 377 such rows, all statuses). The
+"no relevance verdict" claim also didn't hold — it was based on the top-level
+`classification->>'sportstech_relevance'` path, which is always null by construction
+(`build_classification_record()` nests Haiku's output under `classification->'haiku'`, not the
+top level). The nested path shows Haiku ran and returned a verdict for every sampled row.
+
+What actually let the ~127 Super Technologies (Romania-based iGaming/betting operator,
+`vertical='Betting & Fantasy'`) roles through: `_check_fdi_geography` (non-allowlisted path)
+has no reject entries for Gibraltar/Spain/Romania/Croatia/Brazil — real, known locations that
+are simply absent from the list — so `geo_check` fell through to `"pending"` (correctly, by
+current code, sending the job to Haiku rather than skipping it). Haiku then judged
+role-fit-to-company-context ("is this role core to what the company does") rather than
+"is this company genuinely sportstech" — since `Betting & Fantasy` is a legitimate vertical
+in this system (DraftKings, Flutter are allowlisted FDI companies in the same vertical),
+Haiku rated Football Trader/CRM Executive/Principal Product Manager as `"relevant"`. This is
+inherent to the (protected, do-not-touch) Haiku prompt, not a code bug — and the brief itself
+rules out the only clean geography-based fix (widening the reject-list) since VALD's genuine
+postings sit in the same countries (see item 2). **No code change made.** The Super
+Technologies incident was already correctly resolved by the user's own action (deactivate
+source + manually reject rows) — a company-scope judgment call, which is the right lever for
+"this business calls itself sportstech but isn't," not something geography or relevance rules
+can systematically catch.
+
+### 2. Duplicate listing collapse — implemented, doesn't fire on the motivating VALD case (by design)
+
+Brief's diagnosis: VALD's 26 identical "Business Development Manager" postings should
+collapse to 1, matching "title exact + location null/identical" only. Live DB check showed
+all 25 (of the still-pending sample) have **distinct** locations (Jeddah, Riyadh, Marseille,
+Warsaw, Astana, Schweiz, ...) — the conservative rule as scoped would never fire on this
+data. Confirmed with the user to implement literally as scoped anyway (safe, narrow, guards a
+real but different case — true same-title-same-location repeats). See ARCHITECTURE.md's new
+"Duplicate Listing Collapse" section for the implementation and the live before/after check
+(56 raw VALD jobs → 56 after dedupe, 0 dropped, confirming the rule leaves VALD's per-country
+pattern alone as designed).
+
+### 3. Hexis / `none_found` tracking — not a bug, confirmed live
+
+100% of the 46 active `none_found` sources (not just Hexis) had `last_scrape_run_at = NULL`
+as of this session's start — this was item 0's push gap, not adapter logic. With the fix now
+live, ran `python jobs_pipeline/run_linkedin.py --dry-run --company "Hexis"` directly (via a
+local Norton-TLS-proxy launcher, see CLAUDE.md workaround): Serper returned 10 URLs, all 10
+were unrelated Tax Director/staffing-firm postings (Atlas Search, Levelociti, Jobot, Brewer
+Morris, ...), all correctly rejected at Stage 4 name validation — none reached the
+recency/ID-floor gate. **Hexis genuinely has no discoverable LinkedIn posting under this
+query right now** — "Hexis" alone is a common enough term that Google surfaces unrelated
+noise. Not a tracking bug; no code change needed beyond the item-0 push.
+
+### 4. Hub LinkedIn-job visibility — not filtered, confirmed live in dev
+
+Brief's diagnosis: 13 approved LinkedIn-sourced jobs (Stats Perform, EA Sports, Clubforce,
+Hexis, Tixserve, Nutritics, Off The Ball) don't appear on the public `/jobs` board. Checked
+`sd3-intelligence-hub`'s entire query surface (frontend queries, RLS policies, views,
+functions) for any `source`/`url` filter — **none exists anywhere**, including the enforced
+`"Public can read approved jobs"` RLS policy (`qual: status = 'approved'`, no source clause).
+Confirmed live: started the hub's dev server (new `.claude/launch.json`, plus a Node
+`NODE_EXTRA_CA_CERTS` launcher for the same local Norton-proxy issue affecting Node's fetch),
+and all confirmed-`approved` LinkedIn jobs render on `/jobs` today — e.g. Hexis "Chief
+Technology Officer" with a live `Apply →` link straight to
+`linkedin.com/jobs/view/chief-technology-officer-at-hexis-4432256395/`, indistinguishable
+from greenhouse/workday/ashby cards. No filter to remove, nothing to document as
+intentionally hidden — the brief's premise didn't match current (or apparently ever) behaviour.
+
+### 5. Batch-reject action — implemented in `sd3-intelligence-hub`
+
+Added to `app/admin/jobs/AdminJobsClient.tsx`: per-row checkboxes (hidden on already-rejected
+rows, matching the existing single-Reject button's visibility rule), a "select all in view"
+checkbox, and a bulk action bar (reason picker + "Reject N" + "Clear") that appears once
+anything is selected. Selection clears on tab switch. New
+`app/api/admin/jobs/batch-reject/route.ts` mirrors the existing single-reject route exactly —
+same `getAdminUser()` hardcoded-admin-email gate, same `jobs` update shape
+(`status/rejected_reason/reviewed_at/approved_by=null/approved_at=null`), same one
+`jobs_review_feedback` row per job — just batched via `.in('id', jobIds)` instead of looping
+one at a time. Verified: `npx tsc --noEmit` clean, Next dev compiles with no errors, the
+`/admin/jobs` auth gate correctly redirects to `/login`. **Could not click through the actual
+authenticated UI** — `requireAdmin()` is a hardcoded check against a real Google/Supabase
+login (`iddodiamant@gmail.com`) this session has no credentials for — so functional
+verification is code-review + type-check only, not an in-browser click-through. Say so
+explicitly rather than claiming full end-to-end verification.
+
+**Found but not touched:** `sd3-intelligence-hub` has substantial unrelated in-progress work
+sitting uncommitted (modified `CLAUDE.md`, `app/jobs/JobsClient.tsx`, `components/Sidebar.tsx`,
+`types/job.ts`; untracked `app/directory/`, `ContactsSection.tsx`, `RelevantContacts.tsx`,
+`lib/jobMatching.ts`) — none of it touched. The batch-reject commit was staged by explicit
+file path (`AdminJobsClient.tsx` + the new route file only) to keep it isolated; `git diff`
+confirmed the file's entire diff was this session's addition, nothing pre-existing mixed in.
+**Not pushed** — pushing this repo (a live-deployed admin panel with a real auth gate) wasn't
+covered by the push approval given for `sportstech-digest`, and the user should decide
+separately given the other WIP sitting alongside it.
+
+### Tests
+
+- New `jobs_pipeline/test_dedupe.py` (10 assertions, no pytest dep) — exact-duplicate
+  collapse, both-null-location collapse, VALD-style different-locations-both-kept,
+  different-titles-same-location-both-kept, null-vs-populated-location not merged,
+  case/whitespace normalisation, 3-way mixed dedupe. All existing test suites
+  (`classifier.py` __main__, `test_linkedin_gate.py`, `test_apify_linkedin.py`) still pass —
+  65 assertions, no regressions.
+
+### Next session candidates
+
+- Confirm next Friday's run picks up the now-pushed fixes (source tracking should populate
+  for all `none_found`/`linkedin_only` sources; classifier office-slug fix should be live).
+- Decide whether to push the `sd3-intelligence-hub` batch-reject commit, and separately
+  triage the unrelated WIP sitting in that repo (directory feature, contacts section, job
+  matching, `CLAUDE.md` updates) — none of it was reviewed this session beyond noting it exists.
+- If Hexis's name-collision problem with generic Serper results recurs, consider a
+  `linkedin_search_name` override with a more disambiguating term (not done this session —
+  diagnostic only, per the brief's ask).
 
 ---
 
