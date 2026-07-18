@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 
-from .base import BaseAdapter
+from .base import BaseAdapter, dedupe_identical_listings
 from ..relevance_filter import check_relevance
 from ..supabase_jobs_client import (
     get_client,
@@ -860,6 +860,7 @@ class LinkedInAdapter(BaseAdapter):
                 stats["errors"] += 1
                 return stats
 
+            jobs = dedupe_identical_listings(jobs, source_name)
             stats["jobs_found"] = len(jobs)
 
             for job in jobs:

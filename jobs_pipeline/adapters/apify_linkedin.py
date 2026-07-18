@@ -33,7 +33,7 @@ from urllib.parse import quote
 
 import requests
 
-from .base import BaseAdapter
+from .base import BaseAdapter, dedupe_identical_listings
 from .linkedin import (
     _canonical_url,
     _format_salary,
@@ -325,6 +325,7 @@ class ApifyLinkedInAdapter(BaseAdapter):
                 stats["errors"] += 1
                 return stats
 
+            jobs = dedupe_identical_listings(jobs, source_name)
             stats["jobs_found"] = len(jobs)
 
             for job in jobs:
