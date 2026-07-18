@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 2026-05-28*
+*Last updated: 2026-07-14*
 
 ---
 
@@ -9,7 +9,7 @@
 `sportstech-digest` is the scraping and intelligence pipeline for Sports D3c0d3d. It feeds the hub Supabase project (`xwqmnofkvdwpagfweqmj`, West EU / Ireland) which powers the admin panel at sd3-intelligence-hub. Four responsibilities:
 
 1. **News pipeline** — scrapes Irish sportstech news, scores with Claude Sonnet 4.5, emails daily alerts and a monthly research markdown, upserts score 3+ articles to the hub.
-2. **Jobs pipeline** — scrapes weekly job listings from 11 platforms (10 ATS + LinkedIn/Serper fallback), classifies via rule-based pre-filter + Haiku 4.5, archives stale jobs, upserts to the hub.
+2. **Jobs pipeline** — scrapes weekly job listings from 10 ATS platforms plus two LinkedIn paths (Apify for `linkedin_only` companies, Serper discovery for `none_found` companies), classifies via rule-based pre-filter + relevance filter + Haiku 4.5, archives stale jobs, upserts to the hub.
 3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review.
 4. **Weekly LinkedIn digest** — pulls score 3+ news from the past 7 days, picks top 5 with source and topic diversity, drafts a LinkedIn post. Email-only, no hub writes.
 
@@ -29,12 +29,13 @@ sportstech-digest/
   supabase_client.py             News: upserts scored articles to hub
   jobs_pipeline/                 Weekly jobs scraper (Friday 06:00 UTC)
     classifier.py                Rule pre-filter + Haiku classifier
+    relevance_filter.py          Rule-based title noise filter, shared by both LinkedIn adapters
     run_classifier.py            Classify pending unclassified jobs
     run_reclassify_all.py        Backfill job_function on existing jobs
     run_archive_sweep.py         Archive stale jobs
     run_weekly.py                Full weekly orchestrator
     supabase_jobs_client.py      DB helpers (upsert, mark_seen, mark_source_*)
-    adapters/                    One file per ATS platform + base.py
+    adapters/                    One file per ATS platform + base.py (linkedin.py=Serper/none_found, apify_linkedin.py=Apify/linkedin_only)
     weekly/                      runner.py, snapshot.py, email_builder.py, sendgrid_client.py
     run_<platform>.py            Per-platform entry points
   events_pipeline/               Weekly events scraper (Friday 06:00 UTC)
@@ -84,7 +85,8 @@ ALERT_CC                           Optional comma-separated CC (daily news alert
 NEXT_PUBLIC_SUPABASE_URL=https://xwqmnofkvdwpagfweqmj.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY      Informational only
 SUPABASE_SERVICE_ROLE_KEY          Required for all hub upserts
-SERPER_API_KEY                     LinkedIn jobs adapter (free tier 2,500/month, ~55/week used)
+SERPER_API_KEY                     LinkedIn jobs adapter — none_found sources only (free tier 2,500/month)
+APIFY_TOKEN                        LinkedIn jobs adapter — linkedin_only sources only (Apify LinkedIn Jobs Scraper actor). Optional: missing token degrades the linkedin_apify weekly step to a logged warning, does not abort the pipeline.
 ADZUNA_APP_ID, ADZUNA_APP_KEY      Legacy CSV scraper only
 ```
 
@@ -100,7 +102,8 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | SendGrid | Sender domain `sportsd3c0d3d.ie` authenticated |
 | Anthropic — jobs | `claude-haiku-4-5-20251001` |
 | Anthropic — news/events | `claude-sonnet-4-5-20250929` |
-| Serper | google.serper.dev, free tier, LinkedIn job URL discovery |
+| Serper | google.serper.dev, free tier, LinkedIn job URL discovery (`none_found` sources) |
+| Apify | `curious_coder/linkedin-jobs-scraper` actor, live LinkedIn job search (`linkedin_only` sources) |
 
 ---
 
@@ -130,7 +133,8 @@ python digest.py
 
 # Jobs — single adapter
 python jobs_pipeline/run_greenhouse.py
-python jobs_pipeline/run_linkedin.py --dry-run --company "Hexis"
+python jobs_pipeline/run_linkedin.py --dry-run --company "Hexis"          # none_found, via Serper
+python jobs_pipeline/run_linkedin_apify.py --dry-run --company "Hexis"    # linkedin_only, via Apify
 
 # Jobs — classifier and archive sweep
 python jobs_pipeline/run_classifier.py

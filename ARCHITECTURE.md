@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — sportstech-digest
 
-*Last updated: 2026-05-28*
+*Last updated: 2026-07-14*
 
 Technical reference. For recent changes and open bugs see `STATUS.md`.
 
@@ -53,10 +53,10 @@ Technical reference. For recent changes and open bugs see `STATUS.md`.
 | `last_scrape_run_at` | timestamptz | Stamped after every run attempt |
 | `last_successful_scrape_at` | timestamptz | Stamped only when jobs_upserted > 0 |
 
-**`ats_platform` CHECK constraint — 14 allowed values:**
-`greenhouse`, `ashby`, `lever`, `personio`, `breezy`, `bamboohr`, `teamtailor`, `workday`, `phenom`, `linkedin_only`, `none_found`, `custom_html`, `manual`, `gr8people`
+**`ats_platform` CHECK constraint — 14 allowed values (verified live 2026-07-14):**
+`greenhouse`, `lever`, `workable`, `ashby`, `teamtailor`, `smartrecruiters`, `bamboohr`, `personio`, `recruitee`, `breezy`, `workday`, `custom_html`, `linkedin_only`, `none_found`
 
-Note: **`rippling` is NOT in this constraint.** The rippling adapter exists in code but has no active sources and cannot have sources added without an ALTER TABLE first.
+Note: **`rippling` and `phenom` are NOT in this constraint** despite adapter code existing for both — neither has active sources, and adding one requires an ALTER TABLE first. `workable`, `smartrecruiters`, and `recruitee` are allowed values with no adapter code or active sources yet (unused headroom, not a gap to fix).
 
 ### `companies` table (key columns for jobs pipeline)
 
@@ -88,7 +88,7 @@ All adapters follow the `BaseAdapter` pattern in `adapters/base.py`: `fetch()` r
 
 **BambooHR** — `{slug}.bamboohr.com/careers/list` returns JSON (not HTML). Job detail URL: `{slug}.bamboohr.com/careers/{id}`. Descriptions not fetched at list stage — `summary` is None. **EA Sports historic note:** BambooHR source pointed at wrong slug ("ea") which belongs to a social-services org — deactivated 2026-05-28, 29 misattributed jobs deleted, replaced with LinkedIn fallback.
 
-**Teamtailor** — Primary path: JSON:API at `{custom_domain}/jobs.json`. Stats Perform CDN (section.io) returns 406 → falls back to HTML scraping of `careers_url`. Stats Perform's careers page is JS-rendered, so HTML fallback returns 0 jobs. **Known limitation, accepted.** Stats Perform migrated to `linkedin_only` as of 2026-05-28.
+**Teamtailor** — `/jobs.json` serves one of two shapes depending on the tenant, auto-detected per fetch by `_fetch_all()`: JSON:API (`data`/`included`/`relationships` — the original assumption) or JSON Feed 1.x (`items`, each carrying a Teamtailor-specific `_jobposting` schema.org JobPosting object with a structured `jobLocation` address — confirmed live for Boylesports, the sole active source, as of 2026-07-14). Parsing JSON Feed against the JSON:API code silently reads `data.get("data") == []` every time — 0 jobs, no exception raised, so the HTML fallback (which only triggers on HTTP/connection errors) never engaged either; this caused **7+ weeks of undetected zero-yield** (`last_successful_scrape_at` stuck at 2026-05-22 while `last_scrape_run_at` advanced weekly) before being caught and fixed 2026-07-14. HTML-scraping fallback (`_fetch_html`) is retained for genuine connectivity failures. Stats Perform migrated to `linkedin_only` as of 2026-05-28 (unrelated to this bug — its board was JS-rendered, this one returns valid JSON, just a different valid shape than expected).
 
 **Workday** — Uses undocumented but stable `POST /wday/cxs/{tenant}/{site}/jobs` (same as the careers site JS calls). No description in list response; fetches per-job HTML page and extracts from JSON-LD. Adds ~0.3s per job. URL pattern: `{tenant}.wd{N}.myworkdayjobs.com/.../{slug}/job/{Office-CC}/...`. The `/job/{Office-CC}/` segment is used by `_check_fdi_geography_allowlisted` to disambiguate "Multiple Locations" — see Classifier section. Tenant examples: `flutterbe` (Flutter), `draftkings` (DraftKings).
 
@@ -168,9 +168,99 @@ Returns JSON with 10 fields: `seniority`, `employment_type`, `remote_status`, `v
 
 ---
 
-## LinkedIn / Serper Adapter
+## LinkedIn Adapters
 
-Four-stage process per company in `adapters/linkedin.py`:
+Two separate adapters now cover LinkedIn jobs, split by `ats_platform`:
+
+- **`linkedin_only`** (12 sources) → `adapters/apify_linkedin.py`, run via
+  `run_linkedin_apify.py`. Queries the Apify LinkedIn Jobs Scraper actor
+  (`curious_coder/linkedin-jobs-scraper`), which reads LinkedIn's own live
+  `/jobs/search` endpoint directly — closed postings structurally never
+  appear in its output, unlike Serper's Google-index snippets.
+- **`none_found`** (46 sources) → `adapters/linkedin.py`, run via
+  `run_linkedin.py`. Unchanged Serper-discovery path, documented below.
+
+Both write `jobs.source='linkedin'` (unchanged — nothing branches on that
+column's value, and it's useful to treat both as one population for
+reporting) and both apply the same rule-based relevance pre-filter
+(`relevance_filter.py`) before a job reaches `upsert_job`.
+
+### Relevance pre-filter (`relevance_filter.py`)
+
+Rule-based, NOT the Haiku classifier — applied by both LinkedIn adapters in
+`fetch()`, before a job is added to the upsert list, so obvious noise never
+reaches the `pending` review queue. Deliberately conservative: only an
+explicit denylist match (`street team`, `forum coordinator/moderator`,
+`community/content moderator`, `brand ambassador`, generic
+`customer service/support rep`, `retail assistant`, `cashier`, etc.) causes
+a drop. A broader "function allowlist" keyword list (engineer, data,
+analyst, product, sports science, ...) is defined for reference/future
+tightening but does **not** drive rejection — gating on "outside the
+allowlist" would false-positive on legitimate titles that simply don't
+contain a listed keyword (e.g. "Backend Developer"). This is a deliberate
+interpretation of the original brief's "drop roles outside the allowlist"
+instruction; revisit if false negatives (noise that slips through) turn out
+to be more costly than false positives would be.
+
+Company-level scoping is a `frozenset` of exempt `company_careers_sources.id`
+values (`_ROLE_SCOPE_OVERRIDE_SOURCE_IDS`, empty today) — never a
+company-name `if` branch. To take a company fully out of scope, set
+`company_careers_sources.is_active=false` instead.
+
+### Apify adapter (`adapters/apify_linkedin.py`)
+
+- Actor: `curious_coder/linkedin-jobs-scraper` (module constant `_ACTOR`,
+  swappable). Called via plain `requests` against the Apify REST API
+  (`POST /v2/acts/{actor}/run-sync-get-dataset-items?token=...`) — no vendor
+  SDK, consistent with how Serper is called directly elsewhere in this repo.
+- One actor call per company (not batched across all 12 `linkedin_only`
+  sources): the actor's output items don't carry a field tying a row back
+  to its originating input search URL, so per-company calls keep company
+  attribution unambiguous. Low volume by design.
+- Geography: mirrors `classifier.py`'s FDI-allowlist split
+  (`is_indigenous = not is_fdi or is_irish_founded`). Indigenous /
+  non-allowlisted-FDI sources get one search URL (`location=Ireland`);
+  allowlisted-FDI sources (`companies.fdi_classifier_allowlisted=true`) get
+  two (`Ireland` + `United Kingdom`).
+- Freshness gate: `MAX_JOB_AGE_DAYS` (default 30, env-overridable) checked
+  against the actor's `postedAt` field via `_parse_posted_at()` (handles ISO
+  timestamps and relative text like "3 days ago"). **Unparseable date →
+  allow** — the opposite default from the Serper adapter's strict gate,
+  because the actor's data source (LinkedIn's own live search) already
+  guarantees the job is currently open; this gate only refines "how
+  recently posted", not "does it still exist".
+- Missing `APIFY_TOKEN`: fails cleanly, not silently. `fetch()` raises
+  `_ApifyTokenMissingError`; `run()` treats it as an abort signal (same
+  severity as `_SerperAuthError` in the Serper adapter) — logs once, writes
+  `last_scrape_error='apify_token_missing'` on the source, sets
+  `adapter.abort=True`, and returns without writing anything. The weekly
+  pipeline does **not** treat this as fatal — `APIFY_TOKEN` is intentionally
+  excluded from `run_weekly.py`'s required-env check, so this step degrades
+  to a logged warning in the weekly email rather than aborting the whole run.
+- Company-name validation: **always runs**, regardless of whether
+  `linkedin_search_name` is set — this is a deliberate divergence from the
+  Serper adapter's `_validate_name`, which safely skips the equality check
+  under `override=True` because Serper's `site:linkedin.com/jobs/view "X"`
+  query is a precise quoted-phrase Google search. The Apify actor instead
+  runs LinkedIn's own loose native keyword search (`keywords=X&location=Y`),
+  which surfaces anything LinkedIn's relevance ranking associates with the
+  term, not just postings at that company. Confirmed live (2026-07-14): with
+  the override-skips-validation behaviour ported over unchanged, the three
+  sources with an override set (Danu Sport, EA Sports, Stats Perform)
+  returned 25/25, 24/25, and 22/25 completely unrelated companies. `override`
+  (`linkedin_search_name` set) now only changes *which* name is compared —
+  never whether it's compared. Reuses `_normalise_company_name`/
+  `_names_match`/`_strip_html`/`_format_salary` imported directly from
+  `adapters/linkedin.py` (these encode LinkedIn-specific semantics both
+  adapters must agree on; this repo's general convention is otherwise
+  self-contained per-adapter helpers). `_normalise_company_name` strips a
+  trailing parenthetical (e.g. LinkedIn's `"Electronic Arts (EA)"` →
+  `"electronic arts"`) in addition to legal suffixes — added after EA
+  Sports' own genuine posting was rejected as a name mismatch without it.
+
+### Serper adapter (`adapters/linkedin.py`)
+
+Five-stage process per company:
 
 **Stage 1 — Serper discovery**
 Query format:
@@ -214,15 +304,15 @@ Behaviour (strict — the default flipped from allow to reject):
 - no date, job ID `>= MIN_LINKEDIN_JOB_ID` → allow (recent enough by ID).
 - date found & within range → allow.
 
-This block is unconditional — it runs on every job, FDI or indigenous.
+This block is unconditional — it runs on every job, FDI or indigenous. It runs before the relevance pre-filter (Stage 5).
 
 Per-source summary log format:
 ```
 linkedin: '{company}' serper=N domain_filter=N fetched=N validated=N
-errors: 999=N parse=N name_mismatch=N stale_age=N stale_id=N age_unknown=N bypassed=N
+errors: 999=N parse=N name_mismatch=N stale_age=N stale_id=N age_unknown=N relevance=N bypassed=N
 ```
 
-**Source tracking** (`run()` override): mirrors `BaseAdapter.run()` via a `try/finally` — always `mark_source_attempted`, plus `mark_source_successful` when `upserted_count > 0`. Runs on every path including Serper-no-results, so the archive sweep health gate sees LinkedIn sources and result-less sources (ggCircuit/Orreco) are no longer reported as "never scraped".
+**Source tracking** (`run()` override): mirrors `BaseAdapter.run()` via a `try/finally` — always `mark_source_attempted`, plus `mark_source_successful` when `upserted_count > 0`. Runs on every path including Serper-no-results, so the archive sweep health gate sees LinkedIn sources and result-less sources (ggCircuit/Orreco) are no longer reported as "never scraped". `adapters/apify_linkedin.py` follows the identical `try/finally` pattern using the same `mark_source_successful`/`mark_source_attempted` helpers.
 
 ---
 
@@ -275,3 +365,40 @@ Alerts and hub upserts fire for score 3+. `relevance` field (email-only, not per
 5 adapters: `sport_for_business` (10–20 URLs), `eventbrite_ireland` (30 capped), `meetup` (5–15), `irish_diversity_in_tech` (10–20, allowlist-filtered), `ai_tinkerers_dublin` (0, Cloudflare 403 blocked).
 
 Extractor output fields: `name`, `date`, `end_date`, `start_time`, `location`, `area`, `format`, `organiser`, `description`, `image_url`, `recurrence`, `relevance_category` (sportstech | ai_tech_ireland | startup_opportunity | not_relevant), `relevance_reason`, `extraction_confidence`.
+
+### Post-extraction auto-triage (added 2026-07-14)
+
+`relevance_category='not_relevant'` is filtered before insert (unchanged, original
+behaviour). Two further auto-reject steps run inline in `weekly/runner.py`, immediately
+after a successful `upsert_event()`, both guarded so they only ever act on rows still
+`status='pending'` (never overwrite a human's prior review decision):
+
+- **`ai_tech_ireland` auto-reject** — this category's real approval rate was measured at
+  ~1% (68 pending + 26 rejected + 1 verified, see STATUS.md 2026-07-14 audit), against
+  ~12–18% for `sportstech`/`startup_opportunity`. The extractor prompt is unchanged (Claude
+  still classifies and tags it for the audit trail in `classification`); `runner.py` calls
+  `mark_event_auto_rejected(event_id, "ai_tech_ireland_auto_reject")` right after upsert.
+- **Recurring-series collapse** — a weekly/monthly meetup re-enters `pending` every run
+  under a genuinely distinct URL per occurrence (not a de-dup bug — each is a real, separate
+  event page). `collapse_recurring_series(name, recurrence)` keeps only the soonest-dated
+  pending row among exact-name matches with non-null `recurrence` + non-null `date`,
+  rejecting the rest with `rejected_reason='recurring_series_superseded'`. Undated
+  duplicates are left alone — no way to determine "next occurrence" ordering without a date.
+
+### Archive sweep (`run_archive_sweep.py`, added 2026-07-14)
+
+Events have no `archived` status (no CHECK constraint on `events.status` — only
+pending/rejected/verified are used in practice), so this reuses `rejected` with
+`rejected_reason='event_date_passed'` rather than inventing a new status value the hub
+frontend may not render. Rejects `status='pending' AND date < today`; null-date pending
+events are left untouched (separate extraction-quality issue). Unlike jobs' classifier/sweep
+steps (subprocess + stdout-regex parsing), this exposes `run_sweep(dry_run: bool) -> dict`
+for direct import — a fast pure-DB operation with no LLM call to isolate, so the extra
+complexity of subprocess isolation wasn't warranted. Wired into `run_weekly_events.py`
+between extraction and the DB snapshot.
+
+Before this existed, nothing ever removed a stale pending event from the review queue —
+the 2026-07-14 audit found the oldest pending row was from **2025-02-24** (17 months stale).
+One-off cleanup that session: 50 stale-dated pending events rejected via this sweep, plus a
+separate one-off bulk SQL pass for the `ai_tech_ireland` backlog not already caught by
+staleness (31 more) — net 86 pending → 5 pending.

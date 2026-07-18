@@ -1,8 +1,266 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-06-30*
+*Last updated: 2026-07-14*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-07-14 (cont.) — Events pipeline cleanup
+
+### Problem (measured against the live hub DB before this session)
+
+123 total events: 86 pending, 32 rejected, 5 verified. Diagnosis surfaced four distinct
+issues, only one a code bug:
+
+1. **No archive-sweep equivalent existed at all.** Unlike jobs (`run_archive_sweep.py`),
+   nothing ever removed a stale pending event from the review queue. 50 of 86 pending
+   (58%) were already past-dated — oldest from **2025-02-24**, 17 months stale.
+2. **`ai_tech_ireland` category ~1% real approval rate.** The extractor's system prompt
+   treats `sportstech`/`ai_tech_ireland`/`startup_opportunity` as equally in-scope (only
+   `not_relevant` is auto-filtered), but actual admin review behaviour told a different
+   story: 68 pending + 26 rejected + 1 verified for `ai_tech_ireland` (~1% approval) vs.
+   ~12–18% for the other two categories. This is 77% of everything ever captured, for a
+   segment almost never approved.
+3. **Zero audit trail on rejections** — all 32 rejected events had `rejected_reason IS
+   NULL`. Not fixed this session (would require a hub admin-panel UI change, out of this
+   repo's scope) — flagging for awareness.
+4. **Recurring events re-enter the pending queue every run.** "Hack and Chill" (weekly
+   Tog Hackerspace meetup) had 9 rows — confirmed each is a genuinely distinct Meetup URL
+   per occurrence (not a de-dup bug), but a low-value recurring event floods the queue
+   indefinitely with no mechanism to collapse to "just the next occurrence."
+
+All four confirmed with the user before acting (`ai_tech_ireland` handling and recurring-
+event handling were explicit judgment calls, not obvious bugs).
+
+### Code changes — new file
+
+- `events_pipeline/run_archive_sweep.py` — mirrors `jobs_pipeline/run_archive_sweep.py`'s
+  CLI shape (`--dry-run` flag, same logging style) but far simpler: events have no
+  `archived` status (no CHECK constraint on `events.status`; only pending/rejected/verified
+  are used in practice), so this reuses `rejected` with `rejected_reason='event_date_passed'`
+  rather than inventing a new status value the hub frontend may not render. Rejects pending
+  events where `date < today`; leaves null-date pending events untouched (separate
+  extraction-quality issue, not addressed this session). Exposes `run_sweep(dry_run: bool) ->
+  dict` for direct import (no subprocess/log-parsing, unlike jobs' classifier/sweep steps —
+  this is a fast pure-DB operation with no LLM call to isolate).
+
+### Code changes — modified files
+
+- `events_pipeline/supabase_events_client.py` — two new functions:
+  - `mark_event_auto_rejected(event_id, reason)` — flips `pending` → `rejected`, guarded by
+    `.eq("status", "pending")` so it never overwrites a human's prior decision on a
+    re-scraped row.
+  - `collapse_recurring_series(name, recurrence)` — for pending events sharing an exact
+    `name` match with non-null `recurrence` and non-null `date`, keeps only the
+    soonest-dated row and rejects the rest with `rejected_reason='recurring_series_superseded'`.
+    Deliberately exact-match (no fuzzy matching) and date-gated (undated duplicates are left
+    alone — can't determine ordering).
+- `events_pipeline/weekly/runner.py` — `run_extractions()` now calls both new functions
+  inline, right after a successful `upsert_event()`: auto-rejects `ai_tech_ireland` category,
+  then (if not already auto-rejected) checks for a recurring-series collapse. `ExtractionResult`
+  gained `auto_rejected_reason: str | None` so the email can distinguish "genuinely pending"
+  from "inserted then immediately auto-rejected."
+- `events_pipeline/run_weekly_events.py` — added an archive-sweep step (imports
+  `run_sweep` directly) between extraction and the DB snapshot; docstring step list
+  renumbered.
+- `events_pipeline/weekly/email_builder.py` — `build_email()` gained a `sweep_result`
+  param and a new "Archive Sweep" section; "New Events for Review" now excludes rows with
+  `auto_rejected_reason` set (they were inserted then immediately flipped to rejected, not
+  actually awaiting review); "Extraction Results" gained two breakdown rows for the two
+  auto-reject reasons.
+
+### One-off cleanup run this session (live, not just code-forward)
+
+1. `python events_pipeline/run_archive_sweep.py --dry-run` → confirmed 50 candidates
+   (exactly matching the diagnosis), then run live → **50 rejected**
+   (`rejected_reason='event_date_passed'`).
+2. Remaining pending `ai_tech_ireland` rows not already caught by the date sweep (37 of
+   the original 68 were past-dated and already swept) — bulk SQL, previewed then committed
+   → **31 rejected** (`rejected_reason='ai_tech_ireland_auto_reject'`).
+3. Checked for remaining recurring-series duplicates after 1–2 → **0 found** (the date
+   sweep had already caught every dated Hack-and-Chill instance; only its 3 null-dated
+   copies remain pending, untouched by design).
+
+**Net result: 86 pending → 5 pending.** Verified the final 5 by hand — all genuine,
+future-dated, real categories (`The Sportstech Sessions`, `TechBrew: Founder Stories`,
+`Irish Sport and Creativity 2026`, `WomenHack - Dublin`, `Galway Game Makers Meetup`).
+Verified end-to-end via `python events_pipeline/run_weekly_events.py --skip-adapters
+--skip-email` (exercises the new archive-sweep wiring + snapshot + email-build code paths
+with zero adapter/Claude calls) — ran clean, correct new "Archive Sweep" email section
+rendered.
+
+### Not addressed this session
+
+- Null-date pending events (23 originally, ~20 remain) — extraction couldn't parse a date;
+  separate quality issue from staleness.
+- `rejected_reason` audit trail for *human* rejections (all NULL) — hub admin-panel UI
+  change, outside this repo.
+- The `ai_tech_ireland` extractor prompt itself is unchanged — Claude still classifies and
+  tags these events (for audit in `classification`/`extraction`), only the *runner* now
+  auto-rejects. Revisit if the ~1% approval rate shifts.
+
+---
+
+## Session 2026-07-14 — Apify LinkedIn path for `linkedin_only` + relevance pre-filter
+
+### Problem (measured against the live hub DB before this session)
+
+199 all-time LinkedIn-sourced jobs: 139 rejected, 47 archived, 13 approved (~6.5% approval
+rate). Rejection reasons dominated by `not_sportstech` (66), `too_junior` (26), plus a long
+tail of stale/old-job free-text reasons and the `linkedin_stale_id_cleanup_2026_06_30` bulk
+cleanup (19) — confirming the 2026-06-30 posted-age gate fix (`MIN_LINKEDIN_JOB_ID` /
+`MAX_POSTED_AGE_DAYS`) was necessary but didn't retroactively clean the backlog.
+
+Also found (not previously documented): of the 12 active `company_careers_sources` rows with
+`ats_platform='linkedin_only'`, **10 had `last_scrape_run_at = NULL`** — they were essentially
+never reached by the combined Serper query in practice. Only EA Sports and Stats Perform
+showed any run timestamp, and Stats Perform's last *successful* scrape was from April. This is
+independent evidence for moving `linkedin_only` off the Serper path entirely, not just adding a
+stricter gate to it.
+
+### Code changes — new files
+
+- `jobs_pipeline/relevance_filter.py` — rule-based, denylist-driven title noise filter (street
+  team, forum coordinator/moderator, community/content moderator, brand ambassador, generic
+  customer-support/retail/cashier roles). Deliberately conservative: only a denylist hit causes
+  a drop; there's no allowlist-driven rejection. **Assumption flag**: the original brief phrased
+  this as "drop roles whose title clearly falls outside [a job-function allowlist]" — I judged
+  that unsafe as a hard gate (many legitimate titles like "Backend Developer" don't contain an
+  allowlist keyword) and implemented denylist-only rejection instead, with the allowlist kept
+  for reference. Revisit if noise is still leaking through in practice.
+- `jobs_pipeline/adapters/apify_linkedin.py` — new `ApifyLinkedInAdapter`, covers `linkedin_only`
+  sources (12) via the Apify LinkedIn Jobs Scraper actor (`curious_coder/linkedin-jobs-scraper`),
+  called via plain `requests` (no new dependency). Queries LinkedIn's own live `/jobs/search`
+  directly, so closed postings structurally never appear in its output — the freshness gate
+  (`MAX_JOB_AGE_DAYS`, default 30) only refines "how recently posted", it doesn't need to prove
+  liveness the way the Serper adapter's `MIN_LINKEDIN_JOB_ID` floor does. Missing `APIFY_TOKEN`
+  fails cleanly: `_ApifyTokenMissingError` → treated as an abort signal, `last_scrape_error`
+  recorded, no crash. See `ARCHITECTURE.md` for full design detail.
+- `jobs_pipeline/run_linkedin_apify.py` — CLI mirroring `run_linkedin.py`'s
+  `--dry-run --company NAME` pattern.
+- `jobs_pipeline/test_apify_linkedin.py` — 34 assertions covering `relevance_filter.py` and the
+  freshness/URL-building helpers in the new adapter. No pytest dependency, same style as
+  `test_linkedin_gate.py`.
+
+### Code changes — modified files
+
+- `jobs_pipeline/adapters/linkedin.py` — now covers `none_found` sources only (46). Added a
+  Stage 5 relevance-filter gate (calls `relevance_filter.check_relevance()`) after the existing
+  posted-age gate, before a job is added to the upsert list. Log line gained a `relevance=N`
+  counter.
+- `jobs_pipeline/supabase_jobs_client.py` — split `get_linkedin_sources()` into
+  `get_serper_linkedin_sources()` (`none_found`) and `get_apify_linkedin_sources()`
+  (`linkedin_only`, now also selects `fdi_classifier_allowlisted` for the Ireland/UK geography
+  split).
+- `jobs_pipeline/run_linkedin.py` — switched to `get_serper_linkedin_sources()`; docstring
+  updated to reflect `none_found`-only scope.
+- `jobs_pipeline/weekly/runner.py` — renamed `run_linkedin_adapter()` →
+  `run_linkedin_serper_adapter()` (step name `linkedin_serper`); added
+  `run_linkedin_apify_adapter()` (step name `linkedin_apify`). Both now show as separate rows in
+  the weekly summary email.
+- `jobs_pipeline/run_weekly.py` — calls both new functions in place of the old single call.
+  `APIFY_TOKEN` is deliberately **not** in `_REQUIRED_ENV` — its absence degrades one step to a
+  logged warning, not a pipeline-wide abort.
+- `.env.example` — added `APIFY_TOKEN`; also fixed a pre-existing gap where `SERPER_API_KEY` was
+  missing from this file despite being required by the weekly workflow.
+- `.github/workflows/jobs_weekly.yml` — added `APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}`.
+- `requirements.txt` — **no change**. Apify called via plain `requests`, matching how Serper is
+  already called (no vendor SDK anywhere in this repo).
+
+### Apify token added mid-session — three live bugs found and fixed
+
+The user added a real `APIFY_TOKEN` to `.env` mid-session (kept private; never shared with
+Claude). Full `--dry-run` across all 12 `linkedin_only` companies then surfaced three bugs that
+`--company` smoke-testing with a missing token couldn't have caught:
+
+1. **HTTP 201 treated as failure** (`adapters/apify_linkedin.py`) — Apify's
+   `run-sync-get-dataset-items` endpoint returns `201 Created` on a successful synchronous run,
+   not `200`. The original check (`if resp.status_code != 200`) rejected every successful call as
+   `_ApifyRequestError`, discarding real data (visible in the raw error text — genuine LinkedIn
+   job links came back on every one of the 12 companies). Fixed: accepts `(200, 201)`.
+2. **`linkedin_search_name` override bypassed name validation** (`adapters/apify_linkedin.py`) —
+   copied from `linkedin.py`'s Serper path, where skipping the equality check under `override=True`
+   is safe because Serper's `site:linkedin.com/jobs/view "X"` is a precise quoted-phrase Google
+   search. The Apify actor instead runs LinkedIn's own loose native keyword search
+   (`keywords=X&location=Y`), which surfaces anything LinkedIn's relevance ranking associates with
+   the term. Ungated, live dry-run results for the three sources with an override set
+   (Danu Sport, EA Sports, Stats Perform) were 25/25, 24/25, and 22/25 **unrelated companies**
+   (Sony, Rockstar, PayPal, Ryanair, Meta, Novartis...) that would have been written straight to
+   the hub. Fixed: name validation now always runs; `override` only changes *which* name is
+   compared (`linkedin_search_name` vs `company_name`), never *whether* it's compared. The
+   now-unused `override` bool bypass was deleted.
+3. **Parenthetical company-name suffixes not stripped** (`adapters/linkedin.py`,
+   `_normalise_company_name()`, shared by both adapters) — after fixing #2, EA Sports' own genuine
+   posting ("Core Agentic Solutions Lead Architect") was rejected as `name_mismatch` because
+   LinkedIn returns EA's `companyName` as `"Electronic Arts (EA)"`, and the existing suffix-strip
+   list only handled legal suffixes (Ltd/Inc/LLC/etc.), not bracketed abbreviations. Added
+   `re.sub(r"\s*\([^)]*\)\s*$", "", s)`. Unit-verified: both normalise to `"electronic arts"`.
+
+All 19 + 34 existing test assertions still pass after these fixes. Live dry-run behavior after
+all three fixes: Blizzard Entertainment correctly found 1 genuine posting out of 25 candidates
+(24 correctly rejected as unrelated gaming-industry noise); every other company in the 12 either
+found 0 (honest — Apify's own keyword search is noisy run-to-run, same as Serper) or correctly
+rejected 100% of non-matching candidates. No false positives observed in the final run.
+
+### Boylesports Teamtailor adapter — silent 7-week zero-yield bug (found via user-supplied job URLs, then fixed)
+
+User supplied 7 real LinkedIn/ATS job URLs that the pipeline had missed, prompting a fresh DB
+audit. Finding: `careers.boylesports.com/jobs.json` (Teamtailor, the sole active `teamtailor`
+source) has returned **zero new jobs since 2026-05-22** despite `last_scrape_run_at` advancing
+every week through 2026-07-10 — 7+ weeks of silent zero-yield, never surfaced because the
+endpoint was returning `200 OK` throughout (no exception → no HTML-fallback trigger, no visible
+error anywhere).
+
+Root cause, confirmed by fetching the live endpoint directly: it now serves **JSON Feed 1.1**
+(`{"version": "https://jsonfeed.org/version/1.1", "items": [...]}`, each item carrying a
+Teamtailor-specific `_jobposting` schema.org JobPosting object), not the JSON:API shape
+(`data`/`included`/`relationships`) `adapters/teamtailor.py` was written against. Parsing JSON
+Feed against JSON:API code reads `data.get("data") == []` every time — 0 jobs, no exception, and
+since the HTML fallback only triggers on HTTP/connection errors, it never engaged either.
+
+Fixed: `_fetch_all()` now auto-detects shape per response (`"items" in data and "data" not in
+data` → JSON Feed) and routes to a new `_normalise_json_feed()` alongside the existing
+`_normalise()` for JSON:API. Verified live: 47 jobs fetched (was 0), including the specific
+"Head of Cyber Security" posting the user flagged, with structured location (from
+`_jobposting.jobLocation.address`) and full HTML-stripped summary. JSON:API path is left intact
+for any future Teamtailor source that might still serve that shape.
+
+### Four new companies onboarded (found via user-supplied job URLs)
+
+All four were completely absent from `companies` — no adapter of any kind was scraping them
+before this session. All confirmed to use adapters this repo already supports (no new adapter
+code needed); vertical/geography-scope classification confirmed with the user before writing:
+
+| Company | Platform | Endpoint | Vertical | Geography |
+|---|---|---|---|---|
+| European Tour (DP World Tour) | `workday` (tenant=`europeantour`, pod=3) | `europeantour.wd3.myworkdayjobs.com` | Other / Emerging | Standard Ireland-only (not allowlisted) |
+| 2K | `greenhouse` (slug=`2k`) | `boards-api.greenhouse.io/v1/boards/2k` | Esports & Gaming | Standard Ireland-only |
+| VALD | `breezy` (custom domain) | `careers.vald.com/json` | Performance Analytics | Standard Ireland-only |
+| Super Technologies (formerly Superbet) | `greenhouse` (slug=`super`) | `boards-api.greenhouse.io/v1/boards/super` — note: public board is under the `eu.greenhouse.io` display domain, but the API host is the same global `boards-api.greenhouse.io` regardless | Betting & Fantasy | Standard Ireland-only |
+
+All flagged `is_fdi=true, is_irish_founded=false, fdi_classifier_allowlisted=false`. European
+Tour is a genuine scope judgment call, not a clean sportstech vendor fit (it's a golf tour
+operator; most of its 6 open Workday roles are tournament/events logistics) — onboarded at the
+user's explicit choice, expect a high `not_sportstech` rejection rate from Haiku on this one.
+Each source verified live via direct `adapter.fetch()` calls (no `.run()`, zero DB writes during
+verification): European Tour 6 jobs, 2K 132, VALD 53, Super Technologies 186 — all globally-scoped
+boards where the existing FDI-geography rule + Haiku classifier will do the Ireland/UK narrowing,
+same as every other FDI company already in the pipeline.
+
+### Doc-drift found (not part of this session's changes, flagging for awareness)
+
+The live `company_careers_sources.ats_platform` CHECK constraint (queried directly) is:
+`greenhouse, lever, workable, ashby, teamtailor, smartrecruiters, bamboohr, personio, recruitee,
+breezy, workday, custom_html, linkedin_only, none_found` — this differs from the list documented
+in `ARCHITECTURE.md` (which lists `phenom`, `gr8people`, `manual` as allowed and omits `workable`,
+`smartrecruiters`, `recruitee`). Not corrected in this session since it wasn't the task at hand;
+worth reconciling docs against the live schema next session.
+
+### Pending cleanup (not run this session)
+
+Historical LinkedIn rejected/archived rows (139 + 47) are untouched — this session only changes
+what happens to *new* scrapes going forward. No bulk SQL cleanup was requested or run.
 
 ---
 
