@@ -11,7 +11,7 @@ import sys
 import time
 import traceback
 
-from ..supabase_jobs_client import get_active_sources, get_linkedin_sources
+from ..supabase_jobs_client import get_active_sources, get_serper_linkedin_sources, get_apify_linkedin_sources
 from ..adapters.greenhouse import GreenhouseAdapter
 from ..adapters.ashby import AshbyAdapter
 from ..adapters.lever import LeverAdapter
@@ -23,6 +23,7 @@ from ..adapters.workday import WorkdayAdapter
 from ..adapters.rippling import RipplingAdapter
 from ..adapters.phenom import PhenomAdapter
 from ..adapters.linkedin import LinkedInAdapter
+from ..adapters.apify_linkedin import ApifyLinkedInAdapter
 
 log = logging.getLogger(__name__)
 
@@ -106,15 +107,15 @@ def run_ats_adapter(platform: str, adapter_class: type) -> dict:
     return result
 
 
-def run_linkedin_adapter() -> dict:
-    """Run the LinkedIn adapter with abort and session-close handling."""
-    log.info("=== Starting linkedin adapter ===")
+def run_linkedin_serper_adapter() -> dict:
+    """Run the Serper-discovery LinkedIn adapter (none_found sources) with abort/session handling."""
+    log.info("=== Starting linkedin_serper adapter ===")
     t0 = time.time()
     per_source: list[dict] = []
 
     try:
-        sources = get_linkedin_sources()
-        log.info("linkedin: %d active sources", len(sources))
+        sources = get_serper_linkedin_sources()
+        log.info("linkedin_serper: %d active sources", len(sources))
 
         if sources:
             adapter = LinkedInAdapter()
@@ -123,20 +124,58 @@ def run_linkedin_adapter() -> dict:
                     stats = adapter.run(source)
                     per_source.append(stats)
                     if adapter.abort:
-                        log.warning("linkedin: aborting due to rate-limit or block signal")
+                        log.warning("linkedin_serper: aborting due to rate-limit or block signal")
                         break
             finally:
                 adapter.close()
 
     except Exception as exc:
         runtime = time.time() - t0
-        log.error("linkedin adapter failed: %s\n%s", exc, traceback.format_exc())
-        return _aggregate("linkedin", per_source, runtime, exc)
+        log.error("linkedin_serper adapter failed: %s\n%s", exc, traceback.format_exc())
+        return _aggregate("linkedin_serper", per_source, runtime, exc)
 
     runtime = time.time() - t0
-    result = _aggregate("linkedin", per_source, runtime)
+    result = _aggregate("linkedin_serper", per_source, runtime)
     log.info(
-        "=== linkedin complete: %d scraped, %d new, %d updated, runtime %s ===",
+        "=== linkedin_serper complete: %d scraped, %d new, %d updated, runtime %s ===",
+        result["jobs_scraped"], result["jobs_new"],
+        result["jobs_updated"], fmt_runtime(runtime),
+    )
+    return result
+
+
+def run_linkedin_apify_adapter() -> dict:
+    """Run the Apify LinkedIn adapter (linkedin_only sources) with abort handling.
+
+    A missing APIFY_TOKEN degrades this step to a single logged warning +
+    error_message in the weekly email, not a pipeline-wide abort.
+    """
+    log.info("=== Starting linkedin_apify adapter ===")
+    t0 = time.time()
+    per_source: list[dict] = []
+
+    try:
+        sources = get_apify_linkedin_sources()
+        log.info("linkedin_apify: %d active sources", len(sources))
+
+        if sources:
+            adapter = ApifyLinkedInAdapter()
+            for source in sources:
+                stats = adapter.run(source)
+                per_source.append(stats)
+                if adapter.abort:
+                    log.warning("linkedin_apify: aborting — APIFY_TOKEN missing")
+                    break
+
+    except Exception as exc:
+        runtime = time.time() - t0
+        log.error("linkedin_apify adapter failed: %s\n%s", exc, traceback.format_exc())
+        return _aggregate("linkedin_apify", per_source, runtime, exc)
+
+    runtime = time.time() - t0
+    result = _aggregate("linkedin_apify", per_source, runtime)
+    log.info(
+        "=== linkedin_apify complete: %d scraped, %d new, %d updated, runtime %s ===",
         result["jobs_scraped"], result["jobs_new"],
         result["jobs_updated"], fmt_runtime(runtime),
     )

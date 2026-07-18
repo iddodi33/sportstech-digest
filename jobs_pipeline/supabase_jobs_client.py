@@ -39,9 +39,10 @@ def get_client():
     return _get_client()
 
 
-def get_linkedin_sources() -> list[dict]:
-    """Return active sources for linkedin_only and none_found platforms.
+def get_serper_linkedin_sources() -> list[dict]:
+    """Return active sources for the Serper-discovery LinkedIn path (none_found only).
 
+    linkedin_only sources moved to the Apify path — see get_apify_linkedin_sources().
     Extends the standard company join to include is_fdi and is_irish_founded,
     which the LinkedIn adapter needs to build the correct Serper query.
     Also passes through linkedin_search_name from company_careers_sources
@@ -55,7 +56,7 @@ def get_linkedin_sources() -> list[dict]:
         result = (
             client.table("company_careers_sources")
             .select("*, companies(name, is_fdi, is_irish_founded)")
-            .in_("ats_platform", ["linkedin_only", "none_found"])
+            .eq("ats_platform", "none_found")
             .eq("is_active", True)
             .execute()
         )
@@ -68,7 +69,40 @@ def get_linkedin_sources() -> list[dict]:
             sources.append(row)
         return sources
     except Exception as exc:
-        log.error("get_linkedin_sources failed: %s", exc)
+        log.error("get_serper_linkedin_sources failed: %s", exc)
+        return []
+
+
+def get_apify_linkedin_sources() -> list[dict]:
+    """Return active sources for the Apify LinkedIn path (linkedin_only only).
+
+    Extends the standard company join to include is_fdi, is_irish_founded, and
+    fdi_classifier_allowlisted — the Apify adapter needs all three to decide
+    between an Ireland-only search and an Ireland+UK search, matching the
+    same geography rule as classifier.py's FDI allowlist handling.
+    """
+    client = _get_client()
+    if client is None:
+        return []
+    try:
+        result = (
+            client.table("company_careers_sources")
+            .select("*, companies(name, is_fdi, is_irish_founded, fdi_classifier_allowlisted)")
+            .eq("ats_platform", "linkedin_only")
+            .eq("is_active", True)
+            .execute()
+        )
+        sources = []
+        for row in result.data:
+            company_data = row.pop("companies", None) or {}
+            row["company_name"] = company_data.get("name", "")
+            row["is_fdi"] = bool(company_data.get("is_fdi", False))
+            row["is_irish_founded"] = bool(company_data.get("is_irish_founded", False))
+            row["fdi_classifier_allowlisted"] = bool(company_data.get("fdi_classifier_allowlisted", False))
+            sources.append(row)
+        return sources
+    except Exception as exc:
+        log.error("get_apify_linkedin_sources failed: %s", exc)
         return []
 
 

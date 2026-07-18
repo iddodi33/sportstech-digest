@@ -1,7 +1,7 @@
-"""run_linkedin.py — scrape LinkedIn job listings for companies without ATS APIs.
+"""run_linkedin.py — scrape LinkedIn job listings via Serper (Google SERP) discovery.
 
-Covers all active company_careers_sources rows where
-ats_platform IN ('linkedin_only', 'none_found').
+Covers active company_careers_sources rows where ats_platform='none_found'.
+linkedin_only sources moved to the Apify path — see run_linkedin_apify.py.
 
 Two-stage per company:
   1. Google site:linkedin.com/jobs/view query → discover job URLs
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 # Support running as: python jobs_pipeline/run_linkedin.py from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jobs_pipeline.supabase_jobs_client import get_linkedin_sources
+from jobs_pipeline.supabase_jobs_client import get_serper_linkedin_sources
 from jobs_pipeline.adapters.linkedin import (
     LinkedInAdapter,
     _SerperAuthError,
@@ -47,7 +47,7 @@ def main(dry_run: bool = False, company_filter: str = "") -> None:
     mode = "DRY RUN" if dry_run else "live"
     print(f"LinkedIn scrape starting at {start} [{mode}]")
 
-    sources = get_linkedin_sources()
+    sources = get_serper_linkedin_sources()
 
     if company_filter:
         sources = [

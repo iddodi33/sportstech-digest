@@ -31,3 +31,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}

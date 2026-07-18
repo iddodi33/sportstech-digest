@@ -1,10 +1,17 @@
-"""linkedin.py — LinkedIn job scraper adapter.
+"""linkedin.py — LinkedIn job scraper adapter for `none_found` sources (Serper discovery).
 
-Four-stage process per company:
+Companion to adapters/apify_linkedin.py, which covers `linkedin_only` sources
+via the Apify LinkedIn Jobs Scraper actor instead — that path queries
+LinkedIn's own live search directly rather than Google's cached index, so
+it doesn't need the posted-age gate this module relies on.
+
+Five-stage process per company:
   1. Serper API  — POST to google.serper.dev/search to discover LinkedIn job URLs
   2. Domain filter — reject wrong-country subdomains (prevents cross-company confusion)
   3. LinkedIn fetch — GET each page; rotate UA, throttle, handle 999s
   4. Name validation — compare hiringOrganization.name from JSON-LD to source name
+  5. Relevance pre-filter — rule-based noise removal (relevance_filter.py), applied
+     after the posted-age gate, before a job is added to the upsert list
 
 Abort signals (propagate through run() → run_linkedin.py breaks):
   _SerperAuthError    : HTTP 401/403 from Serper — key bad/revoked
@@ -36,6 +43,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .base import BaseAdapter
+from ..relevance_filter import check_relevance
 from ..supabase_jobs_client import (
     get_client,
     mark_job_seen,
@@ -199,6 +207,11 @@ def _normalise_company_name(name: str) -> str:
     """
     s = name.lower().strip()
     s = re.sub(r"\s+", " ", s)
+    # Strip a trailing parenthetical abbreviation/qualifier, e.g. LinkedIn
+    # listing EA as "Electronic Arts (EA)" — confirmed via live Apify dry-run
+    # rejecting EA's own posting as a name_mismatch against search_name
+    # "Electronic Arts" before this was added.
+    s = re.sub(r"\s*\([^)]*\)\s*$", "", s).strip()
     for suffix in _STRIP_SUFFIXES:
         if s.endswith(suffix):
             s = s[: -len(suffix)].rstrip()
@@ -671,9 +684,10 @@ class LinkedInAdapter(BaseAdapter):
 
         # Stage 3 + 4: Fetch, parse, validate
         failed_999 = failed_http = failed_parse = failed_name = failed_stale = 0
-        failed_stale_id = failed_age_unknown = 0
+        failed_stale_id = failed_age_unknown = failed_relevance = 0
         n_bypassed = 0
         jobs: list[dict] = []
+        source_id = source.get("id")
 
         for url in filtered_urls:
             # Fetch — raises _RateLimitAbortError on 3 consecutive 999s
@@ -742,6 +756,16 @@ class LinkedInAdapter(BaseAdapter):
                     job_id, url,
                 )
 
+            # Relevance pre-filter — rule-based noise removal (not the Haiku
+            # classifier). See relevance_filter.py for the denylist and the
+            # conservative-by-design rationale.
+            is_relevant, relevance_reason = check_relevance(parsed["title"], source_id=source_id)
+            if not is_relevant:
+                log.info("linkedin: REJECT %s — %s", url, relevance_reason)
+                failed_relevance += 1
+                audit["rejections"].append((url, relevance_reason))
+                continue
+
             jobs.append(parsed)
             audit["validated"] += 1
             if outcome == "bypassed":
@@ -753,7 +777,7 @@ class LinkedInAdapter(BaseAdapter):
         log.info(
             "linkedin: '%s' serper=%d domain_filter=%d fetched=%d validated=%d "
             "errors: 999=%d parse=%d name_mismatch=%d stale_age=%d stale_id=%d "
-            "age_unknown=%d bypassed=%d",
+            "age_unknown=%d relevance=%d bypassed=%d",
             company_name,
             audit["serper_count"],
             audit["domain_accepted"],
@@ -765,6 +789,7 @@ class LinkedInAdapter(BaseAdapter):
             failed_stale,
             failed_stale_id,
             failed_age_unknown,
+            failed_relevance,
             n_bypassed,
         )
 

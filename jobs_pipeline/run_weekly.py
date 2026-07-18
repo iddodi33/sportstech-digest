@@ -2,7 +2,11 @@
 
 Execution order:
   1.  11 ATS adapters: greenhouse → ashby → lever → personio → breezy →
-      bamboohr → teamtailor → workday → rippling → phenom → linkedin
+      bamboohr → teamtailor → workday → rippling → phenom, then two
+      LinkedIn steps: linkedin_serper (none_found, via Serper discovery)
+      and linkedin_apify (linkedin_only, via the Apify LinkedIn Jobs
+      Scraper actor — degrades to a logged warning if APIFY_TOKEN is unset,
+      does not abort the pipeline)
   2.  Classifier (run_classifier.py via subprocess)
   3.  Archive sweep (run_archive_sweep.py via subprocess, live mode)
   4.  SendGrid summary email to ALERT_TO
@@ -93,7 +97,8 @@ def main(skip_adapters: bool = False, skip_email: bool = False) -> None:
     from jobs_pipeline.weekly.runner import (
         ATS_ADAPTERS,
         run_ats_adapter,
-        run_linkedin_adapter,
+        run_linkedin_serper_adapter,
+        run_linkedin_apify_adapter,
         run_classifier_step,
         run_archive_sweep_step,
     )
@@ -111,7 +116,10 @@ def main(skip_adapters: bool = False, skip_email: bool = False) -> None:
             result = run_ats_adapter(platform, adapter_class)
             adapter_results.append(result)
 
-        result = run_linkedin_adapter()
+        result = run_linkedin_serper_adapter()
+        adapter_results.append(result)
+
+        result = run_linkedin_apify_adapter()
         adapter_results.append(result)
 
     # ── 2. Classifier ─────────────────────────────────────────────────────────
