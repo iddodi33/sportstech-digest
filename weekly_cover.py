@@ -27,14 +27,21 @@ Flow:
   5. Upload to the public 'radar' bucket at weekly-covers/YYYY-MM-DD.png,
      insert an ops.task_attachments row on the task, and append the public
      URL to the task notes.
+  6. Build a dated Skywork video pack (cover + story images + a generated
+     video prompt referencing the 'sportstech-social-video-brand-rules'
+     Skywork skill), upload it as skywork-packs/YYYY-MM-DD.zip and attach it
+     to the same task, so the optional weekly video is a download-and-upload
+     job.
 """
 
 import base64
 import hashlib
+import io
 import json
 import os
 import re
 import sys
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -77,14 +84,18 @@ def picks_hash(picks: list[dict]) -> str:
     ).hexdigest()[:8]
 
 
-def has_cover_attachment(client, task_id: str) -> bool:
+def has_attachment_prefix(client, task_id: str, prefix: str) -> bool:
     res = (
         client.schema("ops").table("task_attachments")
         .select("id,storage_path")
         .eq("task_id", task_id)
         .execute()
     )
-    return any((r.get("storage_path") or "").startswith("weekly-covers/") for r in res.data or [])
+    return any((r.get("storage_path") or "").startswith(prefix) for r in res.data or [])
+
+
+def has_cover_attachment(client, task_id: str) -> bool:
+    return has_attachment_prefix(client, task_id, "weekly-covers/")
 
 
 def parse_picks(notes: str) -> list[dict]:
@@ -209,6 +220,56 @@ def render(html: str, out_path: str):
         b.close()
 
 
+CHIP_NAMES = ["magenta", "teal", "amber", "cyan"]
+
+
+def _safe_name(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-") or "story"
+
+
+def build_skywork_prompt(picks: list[dict], filenames: dict[int, str]) -> str:
+    lines = [
+        'Use the skill "sportstech-social-video-brand-rules" for all brand, motion, pacing and QA rules.',
+        "",
+        'Create a square 1080x1080 LinkedIn recap video, 15 to 25 seconds, called "This Week in Irish SportsTech".',
+        "Use ONLY the uploaded images. First story on screen by second 3. If time is tight, drop the weakest story rather than rushing.",
+        "",
+        "Scenes, in order:",
+        "1. Opening card: cover.png, 2 seconds maximum.",
+    ]
+    for i, pick in enumerate(picks):
+        chip = CHIP_NAMES[i % 4]
+        fname = filenames.get(i)
+        visual = f"image {fname}" if fname else "plain navy card, no photo"
+        lines.append(
+            f'{i + 2}. Chip "{(pick.get("company") or "").upper()}" in {chip}, '
+            f'headline "{(pick.get("slug") or "").upper()}", {visual}.'
+        )
+    lines.append(f"{len(picks) + 2}. End card per the skill: THE FULL BRIEF IS ON OUR PAGE, then SPORTSD3C0D3D.IE in cyan.")
+    return "\n".join(lines) + "\n"
+
+
+def build_skywork_pack(picks: list[dict], images: dict[str, str], cover_png: bytes) -> bytes:
+    """Zip: cover.png + NN_company.jpg for picks with images + the video prompt."""
+    filenames: dict[int, str] = {}
+    blobs: dict[str, bytes] = {"cover.png": cover_png}
+    for i, pick in enumerate(picks):
+        data_url = images.get(pick.get("news_url") or "")
+        if not data_url:
+            continue
+        header, b64 = data_url.split(",", 1)
+        ext = "png" if "png" in header else "jpg"
+        fname = f"{i + 1:02d}_{_safe_name(pick.get('company'))}.{ext}"
+        filenames[i] = fname
+        blobs[fname] = base64.b64decode(b64)
+    blobs["skywork-video-prompt.txt"] = build_skywork_prompt(picks, filenames).encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in blobs.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
 def main() -> int:
     client = get_client()
     task = find_task(client)
@@ -250,12 +311,43 @@ def main() -> int:
     public_url = (
         f"{os.environ['NEXT_PUBLIC_SUPABASE_URL']}/storage/v1/object/public/{BUCKET}/{storage_path}"
     )
-    # Replace any previous cover lines, then append the fresh ones.
+
+    # Skywork pack: cover + story images + generated video prompt, one dated zip.
+    pack_path = f"skywork-packs/{date.today().isoformat()}.zip"
+    pack_url = (
+        f"{os.environ['NEXT_PUBLIC_SUPABASE_URL']}/storage/v1/object/public/{BUCKET}/{pack_path}"
+    )
+    try:
+        pack = build_skywork_pack(picks, images, png)
+        client.storage.from_(BUCKET).upload(
+            pack_path, pack, {"content-type": "application/zip", "upsert": "true"}
+        )
+        if not has_attachment_prefix(client, task["id"], "skywork-packs/"):
+            client.schema("ops").table("task_attachments").insert({
+                "task_id": task["id"],
+                "kind": "file",
+                "file_name": f"sd3-skywork-pack-{date.today().isoformat()}.zip",
+                "mime_type": "application/zip",
+                "size_bytes": len(pack),
+                "bucket": BUCKET,
+                "storage_path": pack_path,
+            }).execute()
+        print(f"Skywork pack uploaded: {pack_url}")
+    except Exception as exc:  # the pack is a nice-to-have; never fail the cover run on it
+        pack_url = None
+        print(f"Skywork pack failed (cover unaffected): {exc}")
+
+    # Replace any previous cover/pack lines, then append the fresh ones.
     kept = [
         ln for ln in notes.splitlines()
-        if not ln.startswith("Cover image: ") and not ln.startswith("Cover picks hash: ")
+        if not ln.startswith("Cover image: ")
+        and not ln.startswith("Cover picks hash: ")
+        and not ln.startswith("Skywork pack: ")
     ]
-    new_notes = "\n".join(kept).rstrip() + f"\n\nCover image: {public_url}\nCover picks hash: {h}"
+    new_notes = "\n".join(kept).rstrip() + f"\n\nCover image: {public_url}"
+    if pack_url:
+        new_notes += f"\nSkywork pack: {pack_url}"
+    new_notes += f"\nCover picks hash: {h}"
     client.schema("ops").table("tasks").update({"notes": new_notes}).eq("id", task["id"]).execute()
     print(f"Cover uploaded (hash {h}): {public_url}")
     return 0
