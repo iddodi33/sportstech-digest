@@ -1,9 +1,7 @@
 name: Weekly LinkedIn Digest
 
 on:
-  schedule:
-    - cron: '0 12 * * 5'  # Friday 12:00 UTC
-  workflow_dispatch:        # allow manual trigger
+  workflow_dispatch:        # manual dispatch only — cron retired 2026-07-24, replaced by Cowork scheduled tasks
 
 jobs:
   digest:

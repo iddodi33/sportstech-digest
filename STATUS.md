@@ -1,8 +1,35 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-07-18*
+*Last updated: 2026-07-24*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-07-24 — retire weekly LinkedIn digest workflow
+
+Migrated the weekly LinkedIn post off this repo's cron. Removed the `schedule`
+trigger from `.github/workflows/weekly_linkedin_digest.yml`, keeping only
+`workflow_dispatch` so it survives as a manual fallback but never fires on its
+own. The post is now produced by **Cowork scheduled tasks** that pull
+`news_items` + `social_posts` from the hub and write Cockpit tasks
+(`source_schema` sd3-weekly-post). Updated CLAUDE.md's GitHub Actions table to
+mark the workflow retired, and removed the two "Do Not Change" entries covering
+the digest picking rules and post format (that logic now lives in the Cowork
+trigger, not this repo). The other four workflows are untouched.
+
+### Open items in the jobs pipeline (neither urgent)
+
+- **(a) `mark_source_successful` not sticking for Stats Perform.** Stats Perform
+  (linkedin_only, Apify path) upserted a job on 2026-07-17, but its
+  `company_careers_sources.last_successful_scrape_at` still reads 2026-04-24.
+  A successful upsert should be advancing that timestamp and isn't — the
+  `mark_source_successful` call appears not to fire (or not to persist) for that
+  source.
+- **(b) `last_scrape_error` never cleared.** Nothing clears
+  `last_scrape_error` on a successful or even attempted run, so stale
+  `serper_no_results` values linger on linkedin_only rows indefinitely. A
+  successful/attempted scrape should reset the error field.
 
 ---
 

@@ -115,9 +115,9 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | `monthly.yml` | `0 9 1 * *` | Monthly research email |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
 | `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
-| `weekly_linkedin_digest.yml` | `0 12 * * 5` | LinkedIn post draft |
+| `weekly_linkedin_digest.yml` | manual dispatch only | Retired 2026-07-24, replaced by Cowork scheduled tasks that pull `news_items` + `social_posts` from the hub and write Cockpit tasks (`source_schema` sd3-weekly-post) |
 
-All five support `workflow_dispatch`.
+The four scheduled workflows (`daily_monitor`, `monthly`, `jobs_weekly`, `events_weekly`) fire on cron; all five support `workflow_dispatch`. `weekly_linkedin_digest.yml` no longer has a cron trigger — it only runs on manual dispatch as a fallback.
 
 ---
 
@@ -178,5 +178,5 @@ The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Py
 - `upsert_job` RPC signature (10 args)
 - `upsert_news_item_if_higher_score` RPC signature (12 args)
 - `upsert_event_if_new` RPC signature (14 args)
-- Weekly LinkedIn digest picking rules (top 5, source diversity hard constraint, topic diversity hard constraint)
-- Weekly LinkedIn post format: `Headline - relevance. read more-URL`
+
+> The former "Weekly LinkedIn digest picking rules" and "Weekly LinkedIn post format" entries were removed on 2026-07-24: that logic moved to the Cowork trigger (Cowork scheduled tasks pulling `news_items` + `social_posts` from the hub and writing Cockpit tasks, `source_schema` sd3-weekly-post). The `weekly_linkedin_digest.yml` workflow remains only as a manual-dispatch fallback.
