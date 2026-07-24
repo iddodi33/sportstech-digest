@@ -1,0 +1,33 @@
+name: Weekly LinkedIn Cover
+
+on:
+  schedule:
+    # Multiple Friday firings: the first that finds today's news-brief Cockpit
+    # task renders the cover; later firings re-render ONLY if the PICKS_JSON in
+    # the task notes changed (Iddo swapped a story in the run's chat). The
+    # script is hash-idempotent, so extra firings are no-ops.
+    - cron: '20 9,10,11,12 * * 5'
+  workflow_dispatch:
+
+jobs:
+  cover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install supabase playwright
+          playwright install --with-deps chromium
+
+      - name: Render and attach weekly cover
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python weekly_cover.py

@@ -6,30 +6,63 @@ Rolling log of changes and open issues. Most recent session first.
 
 ---
 
-## Session 2026-07-24 — retire weekly LinkedIn digest workflow
+## Session 2026-07-24 — weekly LinkedIn posts moved to Cowork; cover image pipeline
 
-Migrated the weekly LinkedIn post off this repo's cron. Removed the `schedule`
-trigger from `.github/workflows/weekly_linkedin_digest.yml`, keeping only
-`workflow_dispatch` so it survives as a manual fallback but never fires on its
-own. The post is now produced by **Cowork scheduled tasks** that pull
-`news_items` + `social_posts` from the hub and write Cockpit tasks
-(`source_schema` sd3-weekly-post). Updated CLAUDE.md's GitHub Actions table to
-mark the workflow retired, and removed the two "Do Not Change" entries covering
-the digest picking rules and post format (that logic now lives in the Cowork
-trigger, not this repo). The other four workflows are untouched.
+The Friday weekly LinkedIn digest left this repo. `weekly_linkedin_digest.yml` no longer has
+a cron (manual `workflow_dispatch` fallback only); `weekly_linkedin_digest.py` stays for that
+fallback but is otherwise retired. Replacements, both Cowork scheduled tasks writing Cockpit
+tasks (`ops.tasks`, source_schema `sd3-weekly-post`):
 
-### Open items in the jobs pipeline (neither urgent)
+- **Friday 10:00 Dublin — news brief** (source_table `news-brief`): picks 5 from hub
+  `news_items` (score 3+, 7d) PLUS radar `social_posts` (surfaced_brand, real company news
+  only, max 2). News-brief voice, no links in body, featured companies tagged instead,
+  one newsletter link in the first comment. Notes end with a machine-readable
+  `PICKS_JSON: [{"company","slug","news_url"}]` line — the contract for the cover renderer.
+- **Monday 10:00 Dublin — jobs post** (source_table `jobs-brief`): 4-6 roles approved in the
+  past 8 days only, indigenous Irish first, grouped per company, role URLs in first comment.
 
-- **(a) `mark_source_successful` not sticking for Stats Perform.** Stats Perform
-  (linkedin_only, Apify path) upserted a job on 2026-07-17, but its
-  `company_careers_sources.last_successful_scrape_at` still reads 2026-04-24.
-  A successful upsert should be advancing that timestamp and isn't — the
-  `mark_source_successful` call appears not to fire (or not to persist) for that
-  source.
-- **(b) `last_scrape_error` never cleared.** Nothing clears
-  `last_scrape_error` on a successful or even attempted run, so stale
-  `serper_no_results` values linger on linkedin_only rows indefinitely. A
-  successful/attempted scrape should reset the error field.
+### Cover image pipeline (new in this repo)
+
+The Cowork sandbox cannot fetch images from news CDNs (allowlisted egress), so covers render
+here:
+
+1. `mirror-news-images` edge function (hub project, v1) + pg_cron `sd3-weekly-cover-assets`
+   (Fri 06:45 UTC): mirrors `image_url` for the week's score-3+ news_items into
+   `public.sd3_cover_assets` as base64 (cap 1.5MB, 30-day retention, RLS on, service-role
+   access only). NOTE: function source is deployed via MCP and not yet synced to the cockpit
+   repo's supabase/functions folder.
+2. `weekly_cover.yml` (Fri 09:20 + 10:20 UTC, both fire for DST safety; the script exits
+   quietly when today's news-brief task doesn't exist yet or the cover is already attached):
+   `weekly_cover.py` parses PICKS_JSON from today's Cockpit task, pulls mirrored images,
+   builds the 1200x1200 new-brand cover (navy #0B1B2B, bars #C15BE6/#22D3A5/#F59E0B/#00B4D8,
+   Bebas Neue, `assets/cover/`), renders with Playwright chromium, uploads to the public
+   `radar` bucket at `weekly-covers/YYYY-MM-DD.png`, inserts an `ops.task_attachments` row on
+   the task and appends the public URL to the task notes. Stories without a mirrored image get
+   branded gradient tiles.
+
+### Review loop and cron retirements (same session, later)
+
+- Friday trigger now delivers the top 5 PLUS the week's full candidate pool, numbered; Iddo
+  replies in the run's chat with swaps ("replace 3 with 7"), the session rewrites the post and
+  the Cockpit notes' PICKS_JSON and strips the cover lines, and `weekly_cover.yml` (now
+  `20 9,10,11,12 * * 5`, picks-hash idempotent) re-renders the cover within the hour.
+- `monthly.yml` cron RETIRED (manual dispatch only): monthly research email superseded by the
+  bi-weekly newsletter and the weekly brief.
+- `monthly_28th.yml` slimmed to newsletter-source export + commit + email only; its digest/
+  jobs/events steps duplicated the daily and Friday runs.
+
+### Jobs pipeline observations (no code changed)
+
+Apify path verified healthy 2026-07-24: EA Sports returned 7 jobs (4 approved, Galway AI
+roles), no `apify_error` on any source; zero-yield linkedin_only companies are plausible
+zero-listing cases. Two minor open items:
+
+- Stats Perform (linkedin_only) upserted a job 2026-07-17 but
+  `company_careers_sources.last_successful_scrape_at` still reads 2026-04-24 —
+  `mark_source_successful` did not stick for that source; worth a look.
+- `last_scrape_error` is never cleared on a later successful/attempted run, so stale
+  `serper_no_results` values linger on linkedin_only rows from before the Apify split.
+  Cosmetic, but misleading when auditing source health.
 
 ---
 

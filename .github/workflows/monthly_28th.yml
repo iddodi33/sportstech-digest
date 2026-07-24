@@ -1,4 +1,8 @@
-name: Monthly 28th Run (News + Jobs + Events)
+name: Newsletter Source Export (28th)
+
+# Slimmed 2026-07-24: the digest/jobs/events steps were removed — daily and
+# Friday workflows already keep the hub current. This now only builds and
+# emails the newsletter-source markdown ahead of the 29th newsletter build.
 
 on:
   schedule:
@@ -9,9 +13,9 @@ permissions:
   contents: write
 
 jobs:
-  monthly-run:
+  newsletter-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repo
@@ -26,43 +30,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run monthly news digest
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          ALERT_FROM: monitor@sportsd3c0d3d.ie
-          ALERT_TO: iddodiamant@gmail.com
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python digest.py
-
-      - name: Run weekly jobs orchestrator
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          ALERT_FROM: monitor@sportsd3c0d3d.ie
-          ALERT_TO: iddodiamant@gmail.com
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
-        run: python jobs_pipeline/run_weekly.py
-
-      - name: Run weekly events orchestrator
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          ALERT_FROM: monitor@sportsd3c0d3d.ie
-          ALERT_TO: iddodiamant@gmail.com
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python events_pipeline/run_weekly_events.py
 
       - name: Build newsletter source markdown
         env:

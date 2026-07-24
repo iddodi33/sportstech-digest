@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-24*
 
 ---
 
@@ -11,7 +11,7 @@
 1. **News pipeline** — scrapes Irish sportstech news, scores with Claude Sonnet 4.5, emails daily alerts and a monthly research markdown, upserts score 3+ articles to the hub.
 2. **Jobs pipeline** — scrapes weekly job listings from 10 ATS platforms plus two LinkedIn paths (Apify for `linkedin_only` companies, Serper discovery for `none_found` companies), classifies via rule-based pre-filter + relevance filter + Haiku 4.5, archives stale jobs, upserts to the hub.
 3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review.
-4. **Weekly LinkedIn digest** — pulls score 3+ news from the past 7 days, picks top 5 with source and topic diversity, drafts a LinkedIn post. Email-only, no hub writes.
+4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py`, which render the branded cover image from the picks and attach it to the Cockpit task. The old `weekly_linkedin_digest.py` email draft is retired (manual dispatch only).
 
 Repo: `C:\coding_projects\sportstech-digest`  
 GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
@@ -25,7 +25,9 @@ sportstech-digest/
   daily_monitor.py               News: daily 9am UTC alert
   digest.py                      News: monthly 1st research email
   news_pipeline.py               News: RSS + Google News + Supabase company queries
-  weekly_linkedin_digest.py      News: weekly LinkedIn post draft, Friday 12:00 UTC
+  weekly_linkedin_digest.py      RETIRED 2026-07-24 (manual dispatch only); replaced by Cowork scheduled tasks
+  weekly_cover.py                Weekly cover image renderer (GH Actions, hourly Fri firings, picks-hash idempotent)
+  assets/cover/                  Brand assets for the cover (logo PNG, Bebas Neue TTF)
   supabase_client.py             News: upserts scored articles to hub
   jobs_pipeline/                 Weekly jobs scraper (Friday 06:00 UTC)
     classifier.py                Rule pre-filter + Haiku classifier
@@ -112,12 +114,14 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | Workflow | Schedule | Purpose |
 |---|---|---|
 | `daily_monitor.yml` | `0 9 * * *` | News alerts |
-| `monthly.yml` | `0 9 1 * *` | Monthly research email |
+| `monthly.yml` | manual only | RETIRED 2026-07-24 — monthly research email superseded by newsletter + weekly brief |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
 | `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
-| `weekly_linkedin_digest.yml` | manual dispatch only | Retired 2026-07-24, replaced by Cowork scheduled tasks that pull `news_items` + `social_posts` from the hub and write Cockpit tasks (`source_schema` sd3-weekly-post) |
+| `weekly_cover.yml` | `20 9,10,11,12 * * 5` | Weekly LinkedIn cover image; hash-idempotent, re-renders when PICKS_JSON changes |
+| `weekly_linkedin_digest.yml` | manual only | RETIRED 2026-07-24 — replaced by Cowork scheduled tasks (see STATUS.md) |
+| `monthly_28th.yml` | `0 6 28 * *` | Newsletter-source export only (slimmed 2026-07-24; digest/jobs/events steps removed) |
 
-The four scheduled workflows (`daily_monitor`, `monthly`, `jobs_weekly`, `events_weekly`) fire on cron; all five support `workflow_dispatch`. `weekly_linkedin_digest.yml` no longer has a cron trigger — it only runs on manual dispatch as a fallback.
+All scheduled workflows support `workflow_dispatch`.
 
 ---
 
@@ -174,9 +178,7 @@ The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Py
 - Monthly news email with markdown attachment
 - `daily_monitor_seen.json` dedup logic
 - News scoring criteria for scores 1, 2, 5
-- `LINKEDIN_SYSTEM` company-hallucination guardrails in `weekly_linkedin_digest.py`
 - `upsert_job` RPC signature (10 args)
 - `upsert_news_item_if_higher_score` RPC signature (12 args)
 - `upsert_event_if_new` RPC signature (14 args)
-
-> The former "Weekly LinkedIn digest picking rules" and "Weekly LinkedIn post format" entries were removed on 2026-07-24: that logic moved to the Cowork trigger (Cowork scheduled tasks pulling `news_items` + `social_posts` from the hub and writing Cockpit tasks, `source_schema` sd3-weekly-post). The `weekly_linkedin_digest.yml` workflow remains only as a manual-dispatch fallback.
+- PICKS_JSON contract between the Cowork Friday news-brief trigger and `weekly_cover.py` (final line of the Cockpit task notes: `PICKS_JSON: [{"company","slug","news_url"}]`)

@@ -1,9 +1,7 @@
 name: Monthly SportsTech Digest
 
 on:
-  schedule:
-    - cron: '0 9 1 * *'  # 9am UTC on the 1st of each month
-  workflow_dispatch:      # allow manual trigger
+  workflow_dispatch:      # manual only — cron retired 2026-07-24, monthly research email superseded by the bi-weekly newsletter and weekly LinkedIn brief
 
 permissions:
   contents: write
