@@ -1,13 +1,7 @@
 name: Weekly LinkedIn Cover
 
 on:
-  schedule:
-    # Multiple Friday firings: the first that finds today's news-brief Cockpit
-    # task renders the cover; later firings re-render ONLY if the PICKS_JSON in
-    # the task notes changed (Iddo swapped a story in the run's chat). The
-    # script is hash-idempotent, so extra firings are no-ops.
-    - cron: '20 9,10,11,12 * * 5'
-  workflow_dispatch:
+  workflow_dispatch:      # manual only — cron retired 2026-08-29 (Iddo cut GH Action automation load). Run manually after the Friday news brief lands in Cockpit; the script is still hash-idempotent.
 
 jobs:
   cover:

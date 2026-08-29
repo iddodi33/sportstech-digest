@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 2026-07-24*
+*Last updated: 2026-08-29*
 
 ---
 
@@ -11,7 +11,7 @@
 1. **News pipeline** — scrapes Irish sportstech news, scores with Claude Sonnet 4.5, emails daily alerts and a monthly research markdown, upserts score 3+ articles to the hub.
 2. **Jobs pipeline** — scrapes weekly job listings from 10 ATS platforms plus two LinkedIn paths (Apify for `linkedin_only` companies, Serper discovery for `none_found` companies), classifies via rule-based pre-filter + relevance filter + Haiku 4.5, archives stale jobs, upserts to the hub.
 3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review.
-4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py`, which render the branded cover image from the picks and attach it to the Cockpit task. The old `weekly_linkedin_digest.py` email draft is retired (manual dispatch only).
+4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py`, which render the branded cover image from the picks and attach it to the Cockpit task. `weekly_cover.yml`'s cron was retired 2026-08-29 (manual dispatch only, run after the Friday news brief lands); the old `weekly_linkedin_digest.py` email draft is retired (manual dispatch only).
 
 Repo: `C:\coding_projects\sportstech-digest`  
 GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
@@ -117,9 +117,9 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | `monthly.yml` | manual only | RETIRED 2026-07-24 — monthly research email superseded by newsletter + weekly brief |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
 | `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
-| `weekly_cover.yml` | `20 9,10,11,12 * * 5` | Weekly LinkedIn cover image; hash-idempotent, re-renders when PICKS_JSON changes |
+| `weekly_cover.yml` | manual only | RETIRED 2026-08-29 — weekly LinkedIn cover image; hash-idempotent, re-renders when PICKS_JSON changes. Run manually after the Friday news brief. |
 | `weekly_linkedin_digest.yml` | manual only | RETIRED 2026-07-24 — replaced by Cowork scheduled tasks (see STATUS.md) |
-| `monthly_28th.yml` | `0 6 28 * *` | Newsletter-source export only (slimmed 2026-07-24; digest/jobs/events steps removed) |
+| `monthly_28th.yml` | manual only | RETIRED 2026-08-29 — newsletter-source export only (slimmed 2026-07-24; digest/jobs/events steps removed). Run manually ahead of the 29th newsletter build when needed. |
 
 All scheduled workflows support `workflow_dispatch`.
 

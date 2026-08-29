@@ -5,9 +5,7 @@ name: Newsletter Source Export (28th)
 # emails the newsletter-source markdown ahead of the 29th newsletter build.
 
 on:
-  schedule:
-    - cron: '0 6 28 * *'
-  workflow_dispatch:
+  workflow_dispatch:      # manual only — cron retired 2026-08-29 (Iddo cut GH Action automation load). Run manually ahead of the 29th newsletter build when the source export is needed.
 
 permissions:
   contents: write
