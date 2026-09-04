@@ -19,6 +19,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from supabase_client import build_news_item, upsert_news_item
 from email_client import send_email as _send_email
+import run_telemetry
+from claude_budget import RunCost, call_claude_with_retry
 
 load_dotenv()
 
@@ -26,6 +28,54 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-5-20250929"
+
+# Per-run cost ceiling for THIS pipeline. Machinery shared via claude_budget.py;
+# the value is per-pipeline because this job scores a far larger corpus than the
+# daily monitor — news_pipeline's CUTOFF_DAYS / SITE_RSS_CUTOFF_DAYS (40 / 35 days)
+# against daily_monitor's 72h window.
+#
+# DERIVATION. news_pipeline.py was run alone on 2026-09-04 to measure the corpus
+# (it makes zero Anthropic calls, so measuring it costs nothing — verified, not
+# assumed). It returned 164 articles over its normal window. Applying the figures
+# verified from the 2026-09-04 audit run of the same MODEL and rubric:
+#
+#   corpus                    164 articles
+#   batches at BATCH_SIZE=15   11
+#   input    11 x 1,967    =  21,637 tok  ->  $0.0649
+#   output  164 x   142.7  =  23,403 tok  ->  $0.3510
+#   NOMINAL RUN                              $0.4160
+#   ceiling $4.25                            10.22x nominal
+#
+# That matches the daily job's basis: $2.25 / $0.2221 = 10.13x. Both ceilings sit on
+# the same ~10x multiple, so neither is tighter than the other by accident.
+#
+# Erring HIGH is deliberate. A daily run that trips re-runs 24 hours later; a weekly
+# run that trips leaves a seven-day hole, and digest.py upserts to news_items, so that
+# hole propagates into the newsletter. The cost of a false trip here is therefore much
+# higher than the cost of a slightly loose ceiling — when in doubt, raise this, do not
+# tighten it.
+#
+# The 10x also absorbs a behaviour change: this pipeline had NO retry logic before
+# adopting claude_budget.call_claude_with_retry, so one logical call can now issue up
+# to MAX_ATTEMPTS (3) billed requests where it previously issued one. A run hitting
+# sustained transient errors can therefore cost materially more than nominal.
+#
+# CAVEAT — 164 is a FLOOR, not the natural corpus. That run hit news_pipeline's
+# TOTAL_TIMEOUT_SECS = 300 and stopped early, and a GH Actions runner without the
+# local TLS proxy gets through more feeds in the same 300s. Bounds:
+#     164 articles ->  11 batches -> $0.42  (measured floor,   10.2x headroom)
+#     500 articles ->  34 batches -> $1.27  (plausible prod,    3.3x headroom)
+#     812 articles ->  55 batches -> $2.06  (sum of all caps,   2.1x headroom)
+# Even the absolute-maximum corpus costs $2.06 at 1x, so this cannot false-trip on
+# volume alone. But note the headroom shrinks as the corpus grows: if real runs land
+# nearer 500 articles, raise this to restore the ~10x intent.
+#
+# PROVISIONAL — no guarded run has been measured. Retune from
+# scripts/data/daily_monitor_usage.jsonl (call: "score_articles_with_claude",
+# pipeline: "digest") after the first real weekly runs.
+RUN_COST_CEILING_USD = 4.25
+
+RUN_COST = RunCost(RUN_COST_CEILING_USD, label="digest")
 TOP_N_ARTICLES = 20
 TOP_N_JOBS = 30
 
@@ -114,6 +164,8 @@ def score_articles_with_claude(articles: list[dict]) -> list[dict]:
     batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
 
     log.info("Scoring %d articles in %d batches of %d…", len(articles), len(batches), batch_size)
+    RUN_COST.reset()
+    per_batch_usage: list[dict] = []
 
     for batch_num, batch in enumerate(batches):
         log.info("Scoring batch %d/%d (%d articles)…", batch_num + 1, len(batches), len(batch))
@@ -169,12 +221,21 @@ ARTICLES:
 JSON array:"""
 
         try:
-            response = client.messages.create(
+            response = call_claude_with_retry(
+                client, RUN_COST,
                 model=MODEL,
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
+
+            b_in, b_out = run_telemetry.usage_from_response(response)
+            per_batch_usage.append({
+                "batch":         batch_num + 1,
+                "articles":      len(batch),
+                "input_tokens":  b_in,
+                "output_tokens": b_out,
+            })
 
             try:
                 batch_scored = json.loads(raw)
@@ -208,6 +269,51 @@ JSON array:"""
         except Exception as exc:
             log.error("Batch %d API call failed: %s", batch_num + 1, exc)
             continue
+
+        # Circuit breaker: actual accumulated usage, checked after every batch.
+        # Everything already scored is kept — that spend is incurred either way.
+        if RUN_COST.over_ceiling():
+            RUN_COST.trip(
+                batches_completed=batch_num + 1,
+                batches_planned=len(batches),
+                articles_scored=len(all_scored),
+                articles_in_window=len(articles),
+            )
+            log.error(
+                "COST CEILING HIT — $%.4f exceeds $%.2f after batch %d/%d. "
+                "Stopping scoring; keeping %d already-scored article(s).",
+                RUN_COST.cost, RUN_COST_CEILING_USD,
+                batch_num + 1, len(batches), len(all_scored),
+            )
+            run_telemetry.record_call(
+                "cost_ceiling_abort", MODEL,
+                RUN_COST.input_tokens, RUN_COST.output_tokens,
+                articles=len(articles), batches=batch_num + 1,
+                extra={
+                    "pipeline":          "digest",
+                    "aborted":           True,
+                    "ceiling_usd":       RUN_COST_CEILING_USD,
+                    "batches_planned":   len(batches),
+                    "batches_completed": batch_num + 1,
+                    "articles_scored":   len(all_scored),
+                    "requests":          RUN_COST.requests,
+                },
+            )
+            break
+
+    rec = run_telemetry.record_call(
+        "score_articles_with_claude", MODEL,
+        RUN_COST.input_tokens, RUN_COST.output_tokens,
+        articles=len(articles), batches=len(batches),
+        per_batch=per_batch_usage,
+        extra={
+            "pipeline":        "digest",
+            "scored_returned": len(all_scored),
+            "aborted":         RUN_COST.tripped,
+        },
+    )
+    log.info("[USAGE] score_articles_with_claude — %d in / %d out tokens, $%.4f",
+             RUN_COST.input_tokens, RUN_COST.output_tokens, rec["cost_usd"])
 
     log.info("Total scored: %d articles across %d batches", len(all_scored), len(batches))
     return all_scored

@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — sportstech-digest
 
-*Last updated: 2026-07-18*
+*Last updated: 2026-09-04*
 
 Technical reference. For recent changes and open bugs see `STATUS.md`.
 
@@ -361,9 +361,41 @@ To add a new company to the allowlist: `UPDATE companies SET fdi_classifier_allo
 
 ## News Pipeline (summary)
 
-**Sources:** 9 direct site RSS/scrape feeds + 62 Google News queries + Supabase company feeds (up to 150 indigenous Irish companies queried by name + Ireland). Full detail in `news_pipeline.py`.
+**Two unattended scorers, not one.** Both are on cron and both are metered — see
+*Cost control* below.
 
-**Scoring tiers:** HIGH (cap 15), MEDIUM (cap 5), LOW (cap 3), TECH_NEWS (cap 10, sport-keyword filtered), BROADSHEET (cap 5, sportstech-keyword filtered), GOOGLE_NEWS (cap 10), businesspost.ie (cap 10).
+| | `daily_monitor.py` | `news_pipeline.py` + `digest.py` |
+|---|---|---|
+| schedule | `daily_monitor.yml`, daily 09:00 UTC | `monthly.yml`, **weekly Sun 07:00 UTC** |
+| window | `LOOKBACK_HOURS = 72` | `CUTOFF_DAYS = 40` / `SITE_RSS_CUTOFF_DAYS = 35` |
+| reads | `GOOGLE_NEWS_FEEDS` + `REGIONAL_RSS_FEEDS` | all three feed lists |
+| upserts | score 3+ | score 3+ |
+
+`monthly.yml`'s cron was retired 2026-07-24 and **un-retired 2026-09-04**: it is the only
+path that reads `SITE_RSS_FEEDS`, so while it was off, that half of discovery ran nowhere.
+`daily_monitor.py` does **not** read `SITE_RSS_FEEDS`, and does not apply the broadsheet or
+tech-news keyword filters — deliberately, since both would drop the regional stories the
+2026-09-04 audit showed were being missed.
+
+**Sources:** 8 direct site RSS/scrape feeds + 6 regional RSS feeds + 62 Google News queries
++ Supabase company feeds (up to 150 indigenous Irish companies queried by name + Ireland).
+Full detail in `news_pipeline.py`.
+
+**Scoring tiers:** HIGH (cap 15), MEDIUM (cap 5), LOW (cap 3), REGIONAL (cap 12,
+**unfiltered**), TECH_NEWS (cap 10, sport-keyword filtered), BROADSHEET (cap 5,
+sportstech-keyword filtered), GOOGLE_NEWS (cap 10), businesspost.ie (cap 10).
+
+In `daily_monitor`'s regional loop the cap is applied **after** the date filter, taking
+items in feed order — these feeds are reverse-chronological, so capping the raw entry list
+first would discard the newest items.
+
+**Known limitation — regional feeds have no fallback.** In `news_pipeline.fetch_feed`, both
+the lxml path and the HTML scrape are gated on `SCRAPE_FALLBACK` membership, which holds
+only `thinkbusiness.ie` and `sportireland.ie`. A regional feed returning zero entries (a
+timeout, a malformed document) therefore gets no fallback at all and contributes nothing
+for that run. `ilovelimerick.ie` has already hit the shared 10s `_SOCKET_TIMEOUT` once.
+Not fixed — `regional_feed_stats.jsonl` records `status` per feed per run so the real
+frequency is measurable before deciding whether it is worth fixing.
 
 **Scores:**
 - 5: Irish sportstech company — funding, launch, award, expansion
@@ -378,6 +410,47 @@ Alerts and hub upserts fire for score 3+. `relevance` field (email-only, not per
 - `upsert_news_item_if_higher_score` (12 args)
 - `upsert_job` (10 args)
 - `upsert_event_if_new` (14 args)
+
+---
+
+## Cost control (`claude_budget.py`, `run_telemetry.py`) — added 2026-09-04
+
+Two modules at the repo root, shared by both scorers.
+
+**`claude_budget.py`** owns the machinery:
+- `RunCost` — accumulates actual billed usage across one run. Takes the ceiling as a
+  **constructor parameter**; it owns no ceiling constant, because the ceiling is per-run
+  and the two pipelines have legitimately different per-run volumes.
+- `call_claude_with_retry(client, run_cost, **kwargs)` — retries transient API errors
+  (`MAX_ATTEMPTS = 3`) and meters **every** response. Metering lives here rather than at the
+  call sites so a logical call that issues several billed requests before succeeding is
+  counted per request — the retry path is exactly the runaway the breaker guards against.
+- `within_budget(...)` — prices a prospective call with Anthropic's **free** token counter
+  and takes worst-case output as `max_tokens`, so the projection is an upper bound. Used to
+  bound the completion path after a trip.
+
+**`run_telemetry.py`** owns persistence — three append-only JSONL logs in `scripts/data/`,
+all failure-tolerant (instrumentation must never break a run):
+
+| log | contents |
+|---|---|
+| `daily_monitor_usage.jsonl` | per-run billed usage, per-batch detail, cost, and the rates applied (`pipeline` field separates the two scorers) |
+| `regional_cap_drops.jsonl` | every item `CAP_REGIONAL` truncated — the numerator |
+| `regional_feed_stats.jsonl` | per feed per run: `status` (ok / zero_entries / error), entries fetched, in-window, kept after cap — the denominator, and what distinguishes a timed-out feed from one that published nothing |
+
+Logs are committed back by `daily_monitor.yml`'s commit step; a runner's filesystem is
+discarded at job end, so a local append alone produces nothing from scheduled runs.
+
+**Ceilings** — per-run, enforced against actual `response.usage`, **abort not prompt**:
+
+| pipeline | constant | value | nominal run |
+|---|---|---|---|
+| `daily_monitor.py` | `RUN_COST_CEILING_USD` | $2.25 | ~$0.22 (83 articles) |
+| `digest.py` | `RUN_COST_CEILING_USD` | $4.25 | ~$0.42 (164 articles) |
+
+On trip: scoring stops, but everything already scored is kept and fully processed —
+the ceiling stops the run *expanding* its spend, it does not abandon the *completion* path
+for work already paid for. `daily_monitor` also emails an alert and exits non-zero.
 
 ---
 

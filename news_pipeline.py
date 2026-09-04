@@ -63,6 +63,21 @@ LOW_QUALITY_SOURCES = {
     "advertiser.ie",
 }
 
+# Irish regional / niche titles added 2026-09-04 after the Google Alerts audit
+# (scripts/audit_alerts_vs_hub.py) found score-4/5 Irish sportstech stories that
+# reached none of the existing feeds. Google News ranks these titles too deep to
+# surface them, so they need direct feeds. Deliberately NOT keyword-filtered:
+# the audit showed the broadsheet and tech-news title filters would drop most of
+# the very stories this tier exists to catch.
+REGIONAL_SOURCES = {
+    "thecork.ie",
+    "setantacollege.com",
+    "offalyexpress.ie",
+    "mayonews.ie",
+    "dundalkdemocrat.ie",
+    "ilovelimerick.ie",
+}
+
 # High-volume broadsheets: full feeds require strict keyword filtering
 # to prevent non-sportstech content flooding results.
 BROADSHEET_SOURCES = {
@@ -100,6 +115,8 @@ CAP_TECH_NEWS      = 10  # tech news sites: keyword-filtered like broadsheets, h
 CAP_MEDIUM         = 5
 CAP_LOW            = 3
 CAP_GOOGLE_NEWS    = 10
+CAP_REGIONAL       = 12  # regional titles: unfiltered, so cap generously until
+                         # measured — tighten once per-feed yield is known
 # -------------------------------------------------------------------------
 
 SITE_RSS_FEEDS = [
@@ -113,6 +130,20 @@ SITE_RSS_FEEDS = [
     "https://bebeez.eu/feed/",
     # RSS attempted first, scraped on failure (see SCRAPE_FALLBACK)
     "https://www.sportireland.ie/rss",
+]
+
+# Irish regional / niche feeds — kept separate from SITE_RSS_FEEDS so the monthly
+# (news_pipeline + digest) path and the daily (daily_monitor) path can diverge
+# later without disturbing the established source list. All six verified parsing
+# with dated entries on 2026-09-04.
+REGIONAL_RSS_FEEDS = [
+    "https://www.thecork.ie/feed/",
+    "https://setantacollege.com/feed/",
+    # Iconic Newspapers titles — shared /rss pattern
+    "https://www.offalyexpress.ie/rss",
+    "https://www.mayonews.ie/rss",
+    "https://www.dundalkdemocrat.ie/rss",
+    "https://www.ilovelimerick.ie/feed/",  # sets bozo=1 but returns entries
 ]
 
 # Maps specific feed URLs to their logical source name (used for labelling and cap lookup).
@@ -293,6 +324,8 @@ def _cap_for(url: str, feed_type: str) -> int:
         return CAP_HIGH
     if domain in MEDIUM_QUALITY_SOURCES:
         return CAP_MEDIUM
+    if domain in REGIONAL_SOURCES:
+        return CAP_REGIONAL
     if domain in LOW_QUALITY_SOURCES:
         return CAP_LOW
     return CAP_HIGH  # unknown site RSS — treat as high quality
@@ -931,6 +964,7 @@ def run() -> list[dict]:
 
     for feed_type, feeds in [
         ("site_rss",    SITE_RSS_FEEDS),
+        ("site_rss",    REGIONAL_RSS_FEEDS),
         ("google_news", GOOGLE_NEWS_FEEDS),
     ]:
         for url in feeds:

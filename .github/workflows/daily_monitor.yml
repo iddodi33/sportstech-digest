@@ -33,12 +33,20 @@ jobs:
           ALERT_TO: iddodiamant@gmail.com
           ALERT_CC: ${{ secrets.ALERT_CC }}
 
-      - name: Commit seen URLs
+      # A runner's filesystem is discarded when the job ends, so the telemetry logs
+      # written by run_telemetry.py have to be committed back or they produce
+      # nothing from scheduled runs. This step already existed for the seen list
+      # and already has contents:write — the logs just join it.
+      - name: Commit seen URLs and run telemetry
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash || true
           git add daily_monitor_seen.json || true
-          git diff --staged --quiet || git commit -m "chore: update seen URLs $(date +%Y-%m-%d)"
+          git add scripts/data/daily_monitor_usage.jsonl || true
+          git add scripts/data/regional_cap_drops.jsonl || true
+          git add scripts/data/regional_feed_stats.jsonl || true
+          git diff --staged --quiet || git commit -m "chore: seen URLs + run telemetry $(date +%Y-%m-%d)"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

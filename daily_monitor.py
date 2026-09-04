@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import socket
 import time
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -23,7 +24,15 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from email_client import send_email as _send_email
-from news_pipeline import GOOGLE_NEWS_FEEDS, _decode_google_news_url
+from news_pipeline import (
+    GOOGLE_NEWS_FEEDS,
+    REGIONAL_RSS_FEEDS,
+    _SOCKET_TIMEOUT,
+    _cap_for,
+    _decode_google_news_url,
+)
+import run_telemetry
+from claude_budget import RunCost, call_claude_with_retry, within_budget
 from supabase_client import build_news_item, upsert_news_item
 
 load_dotenv()
@@ -37,18 +46,44 @@ MIN_SCORE    = 3
 BATCH_SIZE   = 15
 SEEN_FILE    = "daily_monitor_seen.json"
 
+# Per-run cost ceiling for THIS pipeline, enforced against actual response.usage —
+# an abort, never a prompt, because this runs unattended at 09:00 with nobody to
+# confirm. The machinery is shared (claude_budget.py); the value is per-pipeline,
+# since digest.py scores a 35-40 day corpus against this job's 72h window.
+#
+# Basis: a run at the measured post-change volume (83 in-window articles, 6 batches)
+# costs ~$0.22 — $0.213 for score_articles plus ~$0.009 for deduplicate_by_story.
+# That figure is derived from the real billed usage of the 2026-09-04 audit run
+# (1285 articles, 169,239 in / 183,376 out, $3.2584 actual) on the same MODEL,
+# rubric and BATCH_SIZE, scaled to daily volume — per-batch input is near-fixed
+# because the rubric dominates it, and output ran 142.7 tok/article.
+#
+# Ceiling set at ~10x that baseline: high enough that normal volume swings and a
+# full regional cap (6 feeds x 12) never trip it, low enough to stop a runaway.
+# PROVISIONAL — retune against scripts/data/daily_monitor_usage.jsonl once a week
+# of real runs has accumulated. No observed daily run existed when this was set.
+RUN_COST_CEILING_USD = 2.25
 
-def _call_claude_with_retry(client, **kwargs):
-    max_attempts = 3
-    for attempt in range(max_attempts):
-        try:
-            return client.messages.create(**kwargs)
-        except (anthropic.APIConnectionError, anthropic.APIStatusError, anthropic.InternalServerError) as exc:
-            if attempt == max_attempts - 1:
-                raise
-            wait = 2 ** (attempt + 1)
-            log.warning("Claude API error (attempt %d/%d): %s — retrying in %ds", attempt + 1, max_attempts, exc, wait)
-            time.sleep(wait)
+# Headroom above the ceiling reserved for the completion path (deduplicate_by_story).
+# The ceiling stops the run expanding its spend — no further scoring batches — but it
+# does not abandon work already paid for. Dedup costs ~$0.01 at normal volume and its
+# output cannot exceed _DEDUP_MAX_TOKENS, so $0.25 is ample headroom while still
+# bounding the exception: past RUN_COST_CEILING_USD + this, dedup is skipped too.
+DEDUP_COMPLETION_ALLOWANCE_USD = 0.25
+_DEDUP_MAX_TOKENS = 500  # must match the max_tokens passed to the dedup call
+
+
+RUN_COST = RunCost(RUN_COST_CEILING_USD, label="daily_monitor")
+
+
+def _dedup_within_hard_stop(client, prompt: str, max_tokens: int) -> bool:
+    """Dedup is completion, not expansion — see the call site. Bounded by a hard
+    stop slightly above the ceiling so the exception stays measured."""
+    return within_budget(
+        client, RUN_COST, MODEL, prompt, max_tokens,
+        RUN_COST_CEILING_USD + DEDUP_COMPLETION_ALLOWANCE_USD,
+        what="deduplication",
+    )
 
 
 _HEADERS = {
@@ -286,6 +321,105 @@ def fetch_recent_articles(hours: int = LOOKBACK_HOURS) -> tuple[list[dict], int]
         except Exception as exc:
             log.warning("Feed fetch failed (%s): %s", url[:80], exc)
 
+    # --- Irish regional / niche site RSS (added 2026-09-04) ------------------
+    # Direct feeds for titles Google News ranks too deep to surface. No keyword
+    # filtering by design — see REGIONAL_SOURCES in news_pipeline.py.
+    # The cap is applied AFTER the date filter, taking items in feed order:
+    # these feeds are reverse-chronological, so capping the raw entry list first
+    # would throw away in-window stories whenever the cap is smaller than the feed.
+    regional_run_ts = datetime.now(timezone.utc).isoformat()
+    for url in REGIONAL_RSS_FEEDS:
+        feed_title = url
+        try:
+            # feedparser.parse has no timeout of its own — without this a stalled
+            # feed would hang the daily run. Shares news_pipeline's _SOCKET_TIMEOUT:
+            # one value for one concern (feedparser stalling on TLS handshakes).
+            # If it proves too tight for these feeds, raise the shared constant.
+            _old_timeout = socket.getdefaulttimeout()
+            try:
+                socket.setdefaulttimeout(_SOCKET_TIMEOUT)
+                feed = feedparser.parse(url)
+            finally:
+                socket.setdefaulttimeout(_old_timeout)
+
+            entries = getattr(feed, "entries", None)
+            feed_title = getattr(getattr(feed, "feed", None), "title", url) or url
+            if not entries:
+                # news_pipeline's lxml and HTML-scrape fallbacks are both gated on
+                # SCRAPE_FALLBACK membership, which holds only thinkbusiness.ie and
+                # sportireland.ie — no regional feed has a fallback. Zero entries here
+                # is therefore terminal for this feed on this run.
+                log.warning("Regional RSS returned no entries: %s", url[:80])
+                run_telemetry.record_feed_stats(
+                    url, feed_title, "zero_entries",
+                    cap=_cap_for(url, "site_rss"), run_ts=regional_run_ts,
+                )
+                continue
+
+            within_window = []
+
+            for entry in entries:
+                link = getattr(entry, "link", "")
+                if not link or link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                within, pub_dt = is_within_hours(entry, hours)
+                title = getattr(entry, "title", "").strip()
+                raw_summary = (
+                    getattr(entry, "summary", "")
+                    or getattr(entry, "description", "")
+                    or ""
+                )
+
+                article = {
+                    "title":            title,
+                    "source":           feed_title,
+                    "pubDate":          pub_dt.isoformat() if pub_dt else "",
+                    "link":             link,
+                    "link_is_fallback": False,
+                    "snippet":          re.sub(r"<[^>]+>", "", raw_summary)[:300].strip(),
+                }
+                all_articles.append(article)
+                if within:
+                    within_window.append(article)
+                if pub_dt and (newest_pub_dt is None or pub_dt > newest_pub_dt):
+                    newest_pub_dt = pub_dt
+
+            cap     = _cap_for(url, "site_rss")
+            kept    = within_window[:cap]
+            dropped = within_window[cap:]
+            recent_articles.extend(kept)
+
+            # The cap truncates by recency, not relevance, so log what it discards:
+            # a week of real drops is what tells us whether CAP_REGIONAL is too tight.
+            run_telemetry.record_cap_drops(url, feed_title, dropped, cap, regional_run_ts)
+            run_telemetry.record_feed_stats(
+                url, feed_title, "ok",
+                entries_fetched=len(entries),
+                entries_in_window=len(within_window),
+                kept_after_cap=len(kept),
+                cap=cap,
+                run_ts=regional_run_ts,
+            )
+
+            log.info(
+                "[REGIONAL] %s — %d entries, %d within %dh, %d kept, %d dropped by cap %d",
+                feed_title[:30], len(entries), len(within_window), hours,
+                len(kept), len(dropped), cap,
+            )
+
+        except Exception as exc:
+            # A timeout or transport error must be distinguishable in telemetry from a
+            # feed that simply published nothing — otherwise both look like silence.
+            log.warning("Regional RSS fetch failed (%s): %s", url[:80], exc)
+            run_telemetry.record_feed_stats(
+                url, feed_title, "error",
+                cap=_cap_for(url, "site_rss"),
+                error=f"{type(exc).__name__}: {exc}",
+                run_ts=regional_run_ts,
+            )
+
     # Freshness diagnostic
     if newest_pub_dt:
         hours_ago = (datetime.now(timezone.utc) - newest_pub_dt).total_seconds() / 3600
@@ -309,6 +443,9 @@ def score_articles(articles: list[dict]) -> list[dict]:
     batches = [articles[i:i + BATCH_SIZE] for i in range(0, len(articles), BATCH_SIZE)]
     log.info("Scoring %d articles in %d batches…", len(articles), len(batches))
     all_scored = []
+    # Real billed usage, read off each response — not an estimate.
+    per_batch_usage: list[dict] = []
+    run_in = run_out = 0
 
     for batch_num, batch in enumerate(batches):
         articles_text = ""
@@ -360,13 +497,23 @@ ARTICLES:
 JSON array:"""
 
         try:
-            response = _call_claude_with_retry(
-                client,
+            response = call_claude_with_retry(
+                client, RUN_COST,
                 model=MODEL,
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
+
+            b_in, b_out = run_telemetry.usage_from_response(response)
+            run_in  += b_in
+            run_out += b_out
+            per_batch_usage.append({
+                "batch":         batch_num + 1,
+                "articles":      len(batch),
+                "input_tokens":  b_in,
+                "output_tokens": b_out,
+            })
 
             try:
                 batch_scored = json.loads(raw)
@@ -402,12 +549,108 @@ JSON array:"""
             log.error("Batch %d API call failed: %s", batch_num + 1, exc)
             continue
 
+        # Circuit breaker: checked against actual accumulated usage, after each
+        # batch. Everything already scored is kept and still processed downstream —
+        # that spend is incurred either way, and discarding it would waste it.
+        if RUN_COST.over_ceiling():
+            RUN_COST.trip(
+                batches_completed=batch_num + 1,
+                batches_planned=len(batches),
+                articles_scored=len(all_scored),
+                articles_in_window=len(articles),
+            )
+            log.error(
+                "COST CEILING HIT — $%.4f exceeds $%.2f after batch %d/%d. "
+                "Stopping scoring; keeping %d already-scored article(s).",
+                RUN_COST.cost, RUN_COST_CEILING_USD,
+                batch_num + 1, len(batches), len(all_scored),
+            )
+            run_telemetry.record_call(
+                "cost_ceiling_abort", MODEL, RUN_COST.input_tokens, RUN_COST.output_tokens,
+                articles=len(articles),
+                batches=batch_num + 1,
+                extra={
+                    "aborted":           True,
+                    "ceiling_usd":       RUN_COST_CEILING_USD,
+                    "batches_planned":   len(batches),
+                    "batches_completed": batch_num + 1,
+                    "articles_scored":   len(all_scored),
+                    "requests":          RUN_COST.requests,
+                },
+            )
+            break
+
+    rec = run_telemetry.record_call(
+        "score_articles", MODEL, run_in, run_out,
+        articles=len(articles),
+        batches=len(batches),
+        per_batch=per_batch_usage,
+        extra={"scored_returned": len(all_scored), "aborted": RUN_COST.tripped},
+    )
+    log.info(
+        "[USAGE] score_articles — %d in / %d out tokens, $%.4f",
+        run_in, run_out, rec["cost_usd"],
+    )
+
     return all_scored
 
 
 # ---------------------------------------------------------------------------
 # Email sending via SendGrid
 # ---------------------------------------------------------------------------
+
+def send_cost_abort_alert() -> bool:
+    """Email once per aborted run that the cost ceiling tripped.
+
+    A non-zero exit turns the Actions run red, but a red scheduled job can sit
+    unnoticed for days — and this failure mode repeats: whatever tripped the
+    ceiling (a retry storm, a volume spike) trips it again at the same point on
+    the next run, the backlog never clears, and the same articles are re-scored
+    daily. The red build is the record; this is the notification.
+    """
+    d = RUN_COST.abort_details
+    subject = (
+        f"🚨 Daily monitor ABORTED — cost ceiling ${RUN_COST_CEILING_USD:.2f} "
+        f"exceeded (${RUN_COST.cost:.2f})"
+    )
+    html_body = f"""<h2 style="color:#c00;">Daily monitor hit its cost ceiling</h2>
+
+<p>Scoring stopped early. Articles already scored were still deduplicated,
+upserted to Supabase and emailed — that spend was already incurred.</p>
+
+<table cellpadding="6" style="border-collapse:collapse;">
+  <tr><td><strong>Accumulated cost</strong></td><td>${RUN_COST.cost:.4f}</td></tr>
+  <tr><td><strong>Ceiling</strong></td><td>${RUN_COST_CEILING_USD:.2f}</td></tr>
+  <tr><td><strong>Batches completed</strong></td>
+      <td>{d.get('batches_completed', '?')} of {d.get('batches_planned', '?')}</td></tr>
+  <tr><td><strong>Articles scored</strong></td>
+      <td>{d.get('articles_scored', '?')} of {d.get('articles_in_window', '?')} in window</td></tr>
+  <tr><td><strong>Billed requests</strong></td><td>{RUN_COST.requests}</td></tr>
+  <tr><td><strong>Tokens</strong></td>
+      <td>{RUN_COST.input_tokens:,} in / {RUN_COST.output_tokens:,} out</td></tr>
+  <tr><td><strong>Model</strong></td><td>{MODEL}</td></tr>
+</table>
+
+<p><strong>This will repeat.</strong> Whatever caused it will trip the ceiling again
+at the same point on tomorrow's run, so the backlog will not clear on its own.</p>
+
+<p>Check <code>scripts/data/daily_monitor_usage.jsonl</code> for the
+<code>cost_ceiling_abort</code> record and the per-batch token counts. A high request
+count relative to batches points at retries in <code>claude_budget.call_claude_with_retry</code>;
+a high article count points at a discovery volume spike.</p>
+
+<hr>
+<p style="color:#888;font-size:12px;">Sent by the Sports D3c0d3d daily monitor cost breaker.</p>"""
+
+    try:
+        _send_email(subject, html_body)
+        log.info("Cost abort alert email sent.")
+        return True
+    except Exception as exc:
+        # Never let the alert failing mask the abort itself — the non-zero exit stands.
+        log.error("Failed to send cost abort alert email: %s", exc)
+        return False
+
 
 def send_email(article: dict) -> bool:
     score       = article.get("score",            "?")
@@ -497,14 +740,41 @@ Articles:
 
 JSON array of groups:"""
 
+    # Dedup is completion, not expansion: the ceiling stops the run from taking on
+    # NEW spend (further scoring batches), but it does not abandon the completion
+    # path for work already paid for. Skipping it would let duplicates reach both
+    # the emails and the Supabase upserts, and those rows persist long after the
+    # run ends — a worse outcome than one more small call.
+    #
+    # The exception is bounded and measured rather than asserted: price the actual
+    # prompt with the free token counter, assume the worst-case output (max_tokens,
+    # which the API cannot exceed), and only proceed if accumulated + projected
+    # stays under a hard stop slightly above the ceiling.
+    if not _dedup_within_hard_stop(client, prompt, _DEDUP_MAX_TOKENS):
+        return articles
+
     try:
-        response = _call_claude_with_retry(
-            client,
+        response = call_claude_with_retry(
+            client, RUN_COST,
             model=MODEL,
-            max_tokens=500,
+            max_tokens=_DEDUP_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
+
+        # Second billed call per run. Its prompt grows with the number of surviving
+        # articles, so widening discovery grows this too — hence measured separately.
+        d_in, d_out = run_telemetry.usage_from_response(response)
+        rec = run_telemetry.record_call(
+            "deduplicate_by_story", MODEL, d_in, d_out,
+            articles=len(articles),
+            batches=1,
+        )
+        log.info(
+            "[USAGE] deduplicate_by_story — %d articles, %d in / %d out tokens, $%.4f",
+            len(articles), d_in, d_out, rec["cost_usd"],
+        )
+
         match = re.search(r'\[.*\]', raw, re.DOTALL)
         if not match:
             log.warning("Story deduplication: no JSON array in response — skipping.")
@@ -546,7 +816,9 @@ JSON array of groups:"""
 # Main
 # ---------------------------------------------------------------------------
 
-def run():
+def run() -> bool:
+    """Returns True on a normal run, False if the cost ceiling aborted scoring."""
+    RUN_COST.reset()
     seen   = load_seen()
     unsent = []
 
@@ -561,10 +833,16 @@ def run():
         print(f"Articles fetched: {total_fetched}")
         print(f"After {LOOKBACK_HOURS}hr filter: 0")
         print("No new high-scoring articles found today.")
-        return
+        return True
 
     # 2. Score
     scored = score_articles(recent_articles)
+
+    # Alert immediately after scoring, so exactly one alert is sent per aborted run
+    # regardless of which of run()'s return paths is taken below.
+    if RUN_COST.tripped:
+        send_cost_abort_alert()
+
     high   = [a for a in scored if int(a.get("score", 0)) >= MIN_SCORE]
 
     # 3. Deduplicate against seen
@@ -580,7 +858,7 @@ def run():
         print(f"Already seen (skipped): {already_seen_n}")
         print("Emails sent: 0")
         print("No new high-scoring articles found today.")
-        return
+        return not RUN_COST.tripped
 
     # 3b. Story-level deduplication
     before_dedup  = len(new_articles)
@@ -634,6 +912,17 @@ def run():
     if sent_count == 0:
         print("No new high-scoring articles found today.")
 
+    print(f"Run cost: ${RUN_COST.cost:.4f} "
+          f"({RUN_COST.input_tokens:,} in / {RUN_COST.output_tokens:,} out tokens, "
+          f"{RUN_COST.requests} request(s))")
+    if RUN_COST.tripped:
+        print(f"*** COST CEILING ABORT — exceeded ${RUN_COST_CEILING_USD:.2f}. "
+              f"Scoring stopped early; already-scored articles were still "
+              f"upserted and emailed. ***")
+    return not RUN_COST.tripped
+
 
 if __name__ == "__main__":
-    run()
+    # Non-zero exit on a cost-ceiling abort so the workflow shows red — an
+    # unattended run is exactly where a runaway would otherwise go unnoticed.
+    raise SystemExit(0 if run() else 1)

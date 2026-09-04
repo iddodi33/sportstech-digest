@@ -1,8 +1,247 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-07-24*
+*Last updated: 2026-09-04*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-09-04 — Google Alerts audit, then source-discovery calibration
+
+### The audit
+
+`scripts/audit_alerts_vs_hub.py` scored 1285 Google Alerts (2026-06-01 → 2026-09-03) through
+production's own `score_articles()` and diffed the result against `news_items`. Cost $3.26
+actual against a $3.32–3.78 pre-counted estimate. Output in `scripts/data/`:
+`alerts_scored.csv` (all 1285), `alerts_missing_from_hub.csv` (the gap list),
+`alerts_snippets.json` (fetch checkpoint — both scripts resume from these).
+
+Result: 42 alerts scored 4-5, of which **15 unique stories never reached `news_items`**.
+
+### Root cause
+
+`daily_monitor.py` imports **only** `GOOGLE_NEWS_FEEDS`. It never reads `SITE_RSS_FEEDS`,
+never applies `_cap_for`, never applies the keyword filters. The only path that reads
+`SITE_RSS_FEEDS` is `news_pipeline.py` + `digest.py`, which runs solely from `monthly.yml` —
+**whose cron was retired 2026-07-24**. So from 2026-07-24 the site-RSS half of news discovery
+ran nowhere at all. Three of the 15 misses (thinkbusiness.ie, irishtechnews.ie,
+businessplus.ie) were on feeds that were already configured and simply not being read.
+
+A query-term theory was tested and rejected: 14 of the 15 contain "Ireland"/"Irish", so the
+forced `+ireland` token is not the cause. The rest is Google News ranking depth for small
+regional titles — fixed by direct feeds, not by broader query terms.
+
+### Changes
+
+1. `monthly.yml` — cron restored, **weekly** `0 7 * * 0` (not daily; this is a measurement,
+   not a doubling of the scoring bill). Sunday 07:00 UTC clears the Fri 06:00 jobs/events
+   runs and the 09:00 daily monitor.
+2. `news_pipeline.py` — new `REGIONAL_RSS_FEEDS` (six Irish regional/niche feeds, all
+   verified parsing with dated entries 2026-09-04), `REGIONAL_SOURCES` tier, and
+   `CAP_REGIONAL = 12`. Kept as its own list, not merged into `SITE_RSS_FEEDS`, so the daily
+   and monthly paths can diverge later. Also added to `news_pipeline`'s own fetch loop.
+3. `daily_monitor.py` — site-RSS loop over `REGIONAL_RSS_FEEDS` alongside the Google News
+   loop. Cap applied **after** the date filter in feed order (feeds are reverse-chronological,
+   so capping first would discard the newest items). 20s socket timeout per feed —
+   `feedparser.parse` has none of its own and would otherwise hang the daily cron.
+
+Deliberately NOT done: the broadsheet and tech-news title filters were not ported into
+`daily_monitor`. Tested against the gap list, the sport-keyword set kills 8 of the 15 and the
+broadsheet set kills 5 — inheriting either would defeat the change. `daily_monitor` was also
+not merged onto `news_pipeline`'s fetch path (incompatible time semantics: 72h vs 35/40 days,
+plus a 300s timeout and cloudscraper paths that don't belong in a daily run).
+
+### Measured (`scripts/verify_discovery_coverage.py`, discovery-only, no Anthropic calls)
+
+| | before | after |
+|---|---|---|
+| feed entries seen (pre-window) | 1,882 | **1,991** |
+| articles in 72h window | 31 | **83** |
+| from Google News | 31 | 31 |
+| from regional RSS | 0 | **52** |
+| gap domains reached by daily path | 2/15 | **7/15** |
+
+Both halves measured in a single run, so the Google News side is the same 31 in each
+column rather than two samples taken minutes apart — these feeds are volatile enough that
+that matters. Entry counts split 1,991 total minus 109 regional = 1,882 Google News.
+Note the ratio: Google News yields 31 in-window articles from 1,882 entries (1.6%),
+the regional feeds 52 from 109 (48%), because Google News feeds carry months of history
+while these regional feeds carry days.
+
+`CAP_REGIONAL = 12` binds on 3 of 6 feeds (offalyexpress, mayonews, dundalkdemocrat all at
+cap). Uncapped those three would contribute 77 instead of 36. Tune from this figure.
+
+Gap-list coverage, structurally: **10/15** — 7 via the new regional feeds, 3 via the
+re-enabled monthly path. The runtime check shows 7/15 for the daily path alone, because
+setantacollege published nothing inside the 72h window that run and the 3 site_rss domains
+are monthly-only. 0/15 gap URLs are still live in-feed, as expected: RSS feeds carry 10-30
+recent items, not an archive, so June-August stories cannot be recovered from any feed.
+
+### Instrumentation added (same session, follow-up pass)
+
+New `run_telemetry.py` (repo root, imported by `daily_monitor`). Two append-only JSONL
+logs in `scripts/data/`, both failure-tolerant — instrumentation never breaks a run:
+
+- **`daily_monitor_usage.jsonl`** — real billed usage read off `response.usage` for both
+  billed calls per run. `score_articles` records per-batch input/output tokens plus run
+  totals; `deduplicate_by_story` is recorded separately because it is a second billed call
+  whose prompt grows with the number of surviving articles, so widening discovery grows it.
+  Each record stores the per-MTok rates and `pricing_verified_on` alongside the numbers, so
+  a later reader can tell which pricing was applied instead of guessing.
+- **`regional_cap_drops.jsonl`** — every item `CAP_REGIONAL` truncates: feed, source label,
+  title, pubDate, link, run timestamp. First real run logged **41 drops** (Offaly Live 13,
+  Mayo Live 18, Louth Live 10). The cap truncates by recency, not relevance, so this is the
+  evidence needed before tuning. `CAP_REGIONAL` deliberately unchanged.
+- **`regional_feed_stats.jsonl`** — one record per regional feed per run, including feeds
+  that yielded zero: `status` (ok / zero_entries / error), entries fetched, entries
+  in-window, kept after cap. The cap-drop log is the numerator; this is the denominator.
+  It also separates a feed that timed out from one that simply published nothing — those
+  are otherwise identical silence in the telemetry, and `ilovelimerick.ie` already hit the
+  10s `_SOCKET_TIMEOUT` once during the `news_pipeline` measurement run.
+
+**Known limitation — regional feeds have no scrape fallback.** In
+`news_pipeline.fetch_feed`, both the lxml path and the HTML scrape are gated on
+`SCRAPE_FALLBACK` membership (line ~824), which holds only `thinkbusiness.ie` and
+`sportireland.ie`. Confirmed against the file: none of the six regional domains is in it,
+so a regional feed returning zero entries gets no fallback and contributes nothing that
+run. Not fixed — `regional_feed_stats.jsonl` will show how often it actually happens.
+
+`_REGIONAL_SOCKET_TIMEOUT = 20` in `daily_monitor` was removed in favour of importing
+`news_pipeline._SOCKET_TIMEOUT` (10s) — one value for one concern. Measured: all six
+regional feeds complete in 4.8s total, slowest ~1.6s, so the shared constant did not need
+raising. **Qualified later the same day:** `ilovelimerick.ie` hit that 10s timeout during
+the `news_pipeline` measurement run, so 10s is tighter than the isolated measurement
+suggested. Left unchanged — the failure is graceful and `regional_feed_stats.jsonl` now
+records `status: error` per feed, so the real frequency is measurable before acting.
+
+**Cost circuit breaker** (`RUN_COST_CEILING_USD = 2.25`, `daily_monitor.py`; renamed
+from `DAILY_COST_CEILING_USD` later the same session — see the shared-module section). An abort,
+never a prompt — a 09:00 unattended cron has nobody to confirm, and an unattended job is
+exactly where a runaway spend goes unnoticed. Metering lives in `_call_claude_with_retry`,
+so every billed response is counted **including retries**: that helper can issue up to 3
+requests for one logical call, and a breaker blind to retries would miss the failure mode
+it exists to catch. Checked against accumulated `response.usage` after every batch.
+
+On trip: scoring stops, but everything already scored is **kept and still processed** —
+dedup, Supabase upserts and emails all run, since that spend is incurred either way.
+The principle: the ceiling stops the run **expanding** its spend (no further scoring
+batches); it does not abandon the **completion** path for work already paid for. Dedup is
+completion — skipping it would let duplicate stories reach both the emails and the
+Supabase rows, and those rows persist long after the run ends.
+
+That exception is bounded and measured, not asserted: before the dedup call its real
+prompt is priced with Anthropic's free token counter, worst-case output is taken as
+`_DEDUP_MAX_TOKENS` (the API cannot bill more), and it proceeds only if accumulated +
+projected stays under `RUN_COST_CEILING_USD + DEDUP_COMPLETION_ALLOWANCE_USD` ($0.25,
+so a $2.50 hard stop). Past that, dedup is skipped and the reason logged. If the token
+count itself fails, dedup proceeds when the breaker has not tripped and is refused when it
+has — never spend unmeasured on the emergency path.
+
+**Alert on trip:** a non-zero exit turns the Actions run red, but a red scheduled job can
+sit unnoticed for days, and this failure mode repeats — whatever tripped the ceiling trips
+it again at the same point next run, the backlog never clears, and the same articles are
+re-scored daily. `send_cost_abort_alert()` sends one email per aborted run via the existing
+`email_client` path, carrying accumulated cost, batches completed vs planned, articles
+scored vs in-window, request count and token totals. Sent immediately after scoring so
+exactly one goes out regardless of which of `run()`'s return paths follows. A failure to
+send is logged and never masks the abort — the non-zero exit stands either way.
+
+An `cost_ceiling_abort` record is written to
+`daily_monitor_usage.jsonl` (with `aborted: true`, batches planned vs completed, and the
+request count) so an aborted run is distinguishable from a merely short one, and `run()`
+returns False so `__main__` exits non-zero and the workflow shows red.
+
+Threshold basis: no observed daily run existed when this was set, so it is derived from the
+real billed usage of the audit run (1285 articles, 169,239 in / 183,376 out, $3.2584 actual
+— same MODEL, rubric and BATCH_SIZE) scaled to the measured 83-article daily volume:
+~$0.213 for `score_articles` plus ~$0.009 for dedup ≈ **$0.22/run**, ceiling at ~10x.
+**Provisional** — retune from `daily_monitor_usage.jsonl` after a week of real runs.
+Verified by stub, both branches: a trip just over the ceiling ($2.3130) runs dedup as
+completion and finishes at $2.3202 with 4 billed requests; a trip far over ($2.7180) skips
+dedup because projected would breach the $2.50 hard stop. Both keep and process all 45
+already-scored articles, send exactly one alert email, and exit 1 (normal path exits 0).
+
+**Persistence:** the logs are committed back by `daily_monitor.yml`'s existing
+"Commit seen URLs" step (renamed, `git pull --rebase --autostash` added before staging).
+A runner's filesystem is discarded at job end, so a local append alone would have produced
+nothing from scheduled runs. Chosen over a Supabase table — `supabase_client` is already
+authenticated in `daily_monitor`, but a new table plus RLS plus a migration is not
+proportionate for two low-volume append-only logs meant to be read by a human in a week —
+and over workflow artifacts, which expire and cannot accumulate across runs.
+
+### Shared cost module — `claude_budget.py` (both pipelines now guarded)
+
+Restoring `monthly.yml`'s cron put a second unattended scorer into production, and the
+breaker covered only one. `digest.py` was verified unguarded: `messages.create` called
+directly, no metering, no ceiling, no telemetry, and **no retry logic at all**.
+
+`_RunCost`, `_call_claude_with_retry` and the metering were lifted out of `daily_monitor`
+into `claude_budget.py` (`RunCost`, `call_claude_with_retry`, `within_budget`) and both
+pipelines now import it. `DAILY_COST_CEILING_USD` was renamed **`RUN_COST_CEILING_USD`** —
+it is a per-run ceiling, not a daily one, and there are now two. The shared module owns no
+ceiling constant: `RunCost` takes it as a constructor parameter so each pipeline sets its
+own. Telemetry records carry a `pipeline` field so the two stay distinguishable in one log.
+
+| | `daily_monitor.py` | `digest.py` |
+|---|---|---|
+| `RUN_COST_CEILING_USD` | $2.25 (unchanged) | **$4.25** (new) |
+| nominal run | ~$0.22 (83 articles) | ~$0.42 (164 articles) |
+| retries | already had them | **new — see below** |
+
+**`digest.py` gains retries it never had.** That fixes a silent failure — a transient API
+error previously dropped a whole batch with only a log line — but one logical call can now
+issue up to `MAX_ATTEMPTS` (3) billed requests, so its ceiling was set with that multiplier
+in mind. Verified by stub: a batch that raises `InternalServerError` once now retries and
+still returns all 164 articles, where before it would have returned 149.
+
+**Ceiling derivation (no unguarded run — that is the run that most needs a ceiling).**
+`news_pipeline.py` was first confirmed to make zero Anthropic calls, then run alone: it
+produced **164 articles**. That is a floor, not the natural corpus — the run hit
+`TOTAL_TIMEOUT_SECS = 300` and stopped early, and a GH Actions runner without the local TLS
+proxy gets through more feeds in the same 300s. Applying the audit-verified figures
+(142.7 output tok/article, ~1,967 input tok/batch):
+
+| corpus | batches | cost | x3 retries |
+|---|---|---|---|
+| 164 (measured floor) | 11 | $0.42 | $1.25 |
+| 500 (plausible production) | 34 | $1.27 | $3.81 |
+| 812 (sum of all caps, absolute max) | 55 | $2.06 | $6.19 |
+
+$4.25 is ~10x the measured floor, the same multiple as the daily job. Sanity-checked
+against the table: even the absolute-maximum corpus costs $2.06 at 1x, so this cannot
+false-trip on volume alone; it trips on a maximum corpus compounded by a retry storm.
+**Provisional** — retune from telemetry (`call: "score_articles_with_claude"`) after the
+first real weekly runs.
+
+Verified by stub, `digest.py`: normal 164-article run completes unaborted (11 requests, all
+164 scored); a runaway trips at batch 3/11 and keeps the 45 already scored; a transient
+error retries and still scores all 164.
+
+### Open issues
+
+- **`run()` re-scores everything, every run.** Line 628 scores all in-window articles; the
+  `seen` filter is not applied until line 632, and line 668 only ever adds score-3+ articles
+  that emailed successfully. So `daily_monitor_seen.json` suppresses duplicate emails and
+  upserts but saves **zero** scoring cost — even high scorers are re-scored. Every in-window
+  article is scored on ~3 consecutive runs at `LOOKBACK_HOURS = 72`, so the +52/run above
+  lands roughly 3x in billing. Not fixed in this change.
+- **`CAP_REGIONAL` review — due 2026-09-11** (one week of drops from the 2026-09-04 commit).
+  Judge the 41-ish drops/run against `regional_cap_drops.jsonl` (numerator) and
+  `regional_feed_stats.jsonl` (denominator). Unchanged at 12 until then.
+- **`MODEL` bump — due before 2026-09-29.** `"claude-sonnet-4-5-20250929"` is legacy-priced,
+  with tentative retirement not before that date. **`run_telemetry.py`'s rates belong to the
+  same change:** it hardcodes this model's per-MTok rates as module constants, and both
+  pipelines' `RUN_COST_CEILING_USD` are enforced against them — bump the model without the
+  rates and each breaker fires at the wrong real spend, in either direction. Existing log
+  records are safe (each carries its own `rate_*` and `pricing_verified_on`); new runs are
+  not. Keying rates by model ID is the fix, at bump time.
+- **5 gap stories have no discoverable feed** (irishexaminer.com, independent.ie, thesun.ie,
+  southernstar.ie, farmersjournal.ie). Follow-up: narrow Google News `site:` queries
+  following the businesspost.ie pattern. Deliberately deferred so the feed work can be
+  measured on its own first.
+- **thesun.ie soft-blocks all fetches** (JS "Verifying Device" interstitial, HTTP 200). It
+  was 79.7% of the alerts export and 973 of its rows scored 1. Filter it out first if the
+  audit is rerun on a later export.
 
 ---
 

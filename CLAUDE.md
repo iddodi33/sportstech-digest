@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 2026-08-29*
+*Last updated: 2026-09-04*
 
 ---
 
@@ -24,7 +24,12 @@ GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
 sportstech-digest/
   daily_monitor.py               News: daily 9am UTC alert
   digest.py                      News: monthly 1st research email
+  claude_budget.py               Shared cost metering + circuit breaker (RunCost, call_claude_with_retry)
+  run_telemetry.py               Append-only JSONL telemetry: usage, cap drops, per-feed stats
   news_pipeline.py               News: RSS + Google News + Supabase company queries
+                                 Holds GOOGLE_NEWS_FEEDS, SITE_RSS_FEEDS and REGIONAL_RSS_FEEDS.
+                                 daily_monitor reads GOOGLE_NEWS_FEEDS + REGIONAL_RSS_FEEDS only;
+                                 SITE_RSS_FEEDS is read solely by the monthly.yml path.
   weekly_linkedin_digest.py      RETIRED 2026-07-24 (manual dispatch only); replaced by Cowork scheduled tasks
   weekly_cover.py                Weekly cover image renderer (GH Actions, hourly Fri firings, picks-hash idempotent)
   assets/cover/                  Brand assets for the cover (logo PNG, Bebas Neue TTF)
@@ -61,6 +66,28 @@ sportstech-digest/
 - **Verify before destructive SQL.** Wrap in `BEGIN; <preview SELECT> / <UPDATE>; COMMIT;` — confirm row count before committing.
 - **Keep CLAUDE.md files current across sessions.** After any substantive code or schema change, update CLAUDE.md / ARCHITECTURE.md / STATUS.md before ending the session.
 - **PowerShell environment on Windows.** Use `&&` chaining via `;` instead, backtick for line continuation, `$env:VAR` for env vars.
+- **Unattended cron scripts get an aborting cost ceiling, never a typed-confirmation
+  gate.** The standing cost rule (real token-counted estimate + typed confirmation +
+  hard-dollar breaker) read literally points the other way, but a confirmation prompt in
+  a scheduled job has nobody to answer it and would simply hang or break the run. For
+  cron scripts the confirmation half is waived and the breaker half is **not**: it aborts,
+  keeps and processes work already paid for, logs the abort distinguishably, alerts, and
+  exits non-zero. Typed confirmation still applies to anything a human runs by hand
+  (e.g. `scripts/audit_alerts_vs_hub.py`).
+- **Model bumps must update `run_telemetry.py`'s rates in the same change.**
+  `run_telemetry.py` hardcodes the current `MODEL`'s per-MTok rates, and **both pipelines'
+  `RUN_COST_CEILING_USD` are enforced against them**. Bump the model without the rates and
+  the breaker fires at the wrong real spend, in either direction. Existing log records are
+  safe — each carries its own `rate_*` and `pricing_verified_on` — but new runs are not.
+- **Which modules make billed Anthropic calls.** Verified 2026-09-04, not assumed:
+  **billed** — `daily_monitor.py` (score + dedup), `digest.py` (score);
+  **not billed** — `news_pipeline.py` (zero `anthropic` references; safe to run alone for
+  measurement). `scripts/verify_discovery_coverage.py` is discovery-only by design.
+- **Both cost ceilings are provisional.** $2.25 (`daily_monitor.py`) and $4.25
+  (`digest.py`) were derived by scaling the 2026-09-04 audit run's measured per-article
+  token figures to each pipeline's article count — neither comes from an observed run of
+  its own. Retune both from `scripts/data/daily_monitor_usage.jsonl` (the `pipeline` field
+  separates them) once real runs have accumulated.
 - **FDI allowlist pattern.** When adding a new FDI company to the pipeline, set `fdi_classifier_allowlisted=true` on the `companies` row AND verify an active source exists in `company_careers_sources`. Do not assume a company row alone is sufficient.
 
 ---
@@ -114,7 +141,7 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | Workflow | Schedule | Purpose |
 |---|---|---|
 | `daily_monitor.yml` | `0 9 * * *` | News alerts |
-| `monthly.yml` | manual only | RETIRED 2026-07-24 — monthly research email superseded by newsletter + weekly brief |
+| `monthly.yml` | `0 7 * * 0` | UN-RETIRED 2026-09-04 (weekly, Sun 07:00 UTC). Only path that reads `SITE_RSS_FEEDS` + `REGIONAL_RSS_FEEDS`; while its cron was off (2026-07-24 → 2026-09-04) the site-RSS half of news discovery ran nowhere. Still sends the research email. |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
 | `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
 | `weekly_cover.yml` | manual only | RETIRED 2026-08-29 — weekly LinkedIn cover image; hash-idempotent, re-renders when PICKS_JSON changes. Run manually after the Friday news brief. |

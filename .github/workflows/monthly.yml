@@ -1,7 +1,18 @@
 name: Monthly SportsTech Digest
 
 on:
-  workflow_dispatch:      # manual only — cron retired 2026-07-24, monthly research email superseded by the bi-weekly newsletter and weekly LinkedIn brief
+  # Cron retired 2026-07-24 (research email superseded by the newsletter + weekly
+  # brief), un-retired 2026-09-04. The Google Alerts audit
+  # (scripts/audit_alerts_vs_hub.py) found this is the ONLY path that reads
+  # SITE_RSS_FEEDS — daily_monitor imports GOOGLE_NEWS_FEEDS alone — so while the
+  # cron was off, thinkbusiness.ie / irishtechnews.ie / businessplus.ie stories
+  # reached nothing, including three that scored 4-5. Weekly rather than daily so
+  # this reads as a measurement of the site-RSS path, not a doubling of the
+  # scoring bill. Sunday 07:00 UTC avoids the Fri 06:00 jobs/events runs and the
+  # 09:00 daily monitor.
+  schedule:
+    - cron: '0 7 * * 0'
+  workflow_dispatch:
 
 permissions:
   contents: write
