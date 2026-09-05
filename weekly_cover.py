@@ -32,6 +32,12 @@ Flow:
      Skywork skill), upload it as skywork-packs/YYYY-MM-DD.zip and attach it
      to the same task, so the optional weekly video is a download-and-upload
      job.
+  7. Build the CAROUSEL (added 5 Sep 2026, when the Friday brief became a
+     carousel and the AI take moved to its own Wednesday video): a cover
+     slide plus one slide per pick, six 1200x1200 PNGs and the six-page
+     PDF that LinkedIn accepts as a document post. Uploaded as
+     weekly-carousel/YYYY-MM-DD.pdf and -slides.zip and attached to the
+     task. Rendering lives in carousel_slides.py.
 """
 
 import base64
@@ -46,6 +52,8 @@ from datetime import date
 from pathlib import Path
 
 from supabase import create_client
+
+import carousel_slides
 
 BRAND_COLOURS = ["#C15BE6", "#22D3A5", "#F59E0B", "#00B4D8"]
 GRADIENTS = [
@@ -245,7 +253,7 @@ def build_skywork_prompt(picks: list[dict], filenames: dict[int, str]) -> str:
             f'{i + 2}. Chip "{(pick.get("company") or "").upper()}" in {chip}, '
             f'headline "{(pick.get("slug") or "").upper()}", {visual}.'
         )
-    lines.append(f"{len(picks) + 2}. End card per the skill: THE FULL BRIEF IS ON OUR PAGE, then SPORTSD3C0D3D.IE in cyan.")
+    lines.append(f"{len(picks) + 2}. End card per the skill: MORE NEWS AND OUR NEWSLETTER, then SPORTSD3C0D3D.IE in cyan.")
     return "\n".join(lines) + "\n"
 
 
@@ -337,16 +345,59 @@ def main() -> int:
         pack_url = None
         print(f"Skywork pack failed (cover unaffected): {exc}")
 
+    # Carousel: cover slide + one slide per pick, six PNGs and a six-page PDF.
+    stamp = date.today().isoformat()
+    pdf_store = f"weekly-carousel/{stamp}.pdf"
+    slides_store = f"weekly-carousel/{stamp}-slides.zip"
+    pdf_url = slides_url = None
+    try:
+        pngs, pdf_file = carousel_slides.render_carousel(picks, images, "/tmp/sd3_carousel")
+        pdf_bytes = pdf_file.read_bytes()
+        client.storage.from_(BUCKET).upload(
+            pdf_store, pdf_bytes, {"content-type": "application/pdf", "upsert": "true"}
+        )
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+            for png_path in pngs:
+                z.writestr(png_path.name, png_path.read_bytes())
+        slides_zip = zbuf.getvalue()
+        client.storage.from_(BUCKET).upload(
+            slides_store, slides_zip, {"content-type": "application/zip", "upsert": "true"}
+        )
+        base_url = f"{os.environ['NEXT_PUBLIC_SUPABASE_URL']}/storage/v1/object/public/{BUCKET}"
+        pdf_url = f"{base_url}/{pdf_store}"
+        slides_url = f"{base_url}/{slides_store}"
+        if not has_attachment_prefix(client, task["id"], "weekly-carousel/"):
+            client.schema("ops").table("task_attachments").insert([
+                {"task_id": task["id"], "kind": "file",
+                 "file_name": f"sd3-carousel-{stamp}.pdf",
+                 "mime_type": "application/pdf", "size_bytes": len(pdf_bytes),
+                 "bucket": BUCKET, "storage_path": pdf_store},
+                {"task_id": task["id"], "kind": "file",
+                 "file_name": f"sd3-carousel-{stamp}-slides.zip",
+                 "mime_type": "application/zip", "size_bytes": len(slides_zip),
+                 "bucket": BUCKET, "storage_path": slides_store},
+            ]).execute()
+        print(f"Carousel uploaded ({len(pngs)} slides): {pdf_url}")
+    except Exception as exc:  # the carousel must never fail the cover run
+        print(f"Carousel failed (cover unaffected): {exc}")
+
     # Replace any previous cover/pack lines, then append the fresh ones.
     kept = [
         ln for ln in notes.splitlines()
         if not ln.startswith("Cover image: ")
         and not ln.startswith("Cover picks hash: ")
         and not ln.startswith("Skywork pack: ")
+        and not ln.startswith("Carousel PDF: ")
+        and not ln.startswith("Carousel slides: ")
     ]
     new_notes = "\n".join(kept).rstrip() + f"\n\nCover image: {public_url}"
     if pack_url:
         new_notes += f"\nSkywork pack: {pack_url}"
+    if pdf_url:
+        new_notes += f"\nCarousel PDF: {pdf_url}"
+    if slides_url:
+        new_notes += f"\nCarousel slides: {slides_url}"
     new_notes += f"\nCover picks hash: {h}"
     client.schema("ops").table("tasks").update({"notes": new_notes}).eq("id", task["id"]).execute()
     print(f"Cover uploaded (hash {h}): {public_url}")

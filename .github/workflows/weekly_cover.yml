@@ -1,7 +1,12 @@
 name: Weekly LinkedIn Cover
 
 on:
-  workflow_dispatch:      # manual only — cron retired 2026-08-29 (Iddo cut GH Action automation load). Run manually after the Friday news brief lands in Cockpit; the script is still hash-idempotent.
+  schedule:
+    # Restored 2026-09-05: the Friday post is now a carousel, so the render is
+    # load-bearing, not a nice-to-have. Fires after the 08:00 Dublin draft lands
+    # in Cockpit; the script is hash-idempotent and re-renders on a pick swap.
+    - cron: '20 9,10,11,12 * * 5'
+  workflow_dispatch:
 
 jobs:
   cover:
