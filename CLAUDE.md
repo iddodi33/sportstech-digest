@@ -11,7 +11,7 @@
 1. **News pipeline** — scrapes Irish sportstech news, scores with Claude Sonnet 4.5, emails daily alerts and a monthly research markdown, upserts score 3+ articles to the hub.
 2. **Jobs pipeline** — scrapes weekly job listings from 10 ATS platforms plus two LinkedIn paths (Apify for `linkedin_only` companies, Serper discovery for `none_found` companies), classifies via rule-based pre-filter + relevance filter + Haiku 4.5, archives stale jobs, upserts to the hub.
 3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review.
-4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py`, which render the branded cover image from the picks and attach it to the Cockpit task. `weekly_cover.yml`'s cron was retired 2026-08-29 (manual dispatch only, run after the Friday news brief lands); the old `weekly_linkedin_digest.py` email draft is retired (manual dispatch only).
+4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py` + `carousel_slides.py`, which render the branded cover image AND the six-slide carousel (a cover slide plus one per pick, as PNGs and a six-page PDF) from the picks and attach them to the Cockpit task. `weekly_cover.yml`'s cron was retired 2026-08-29 and RESTORED 2026-09-05, because the Friday post is now a carousel and the render is load-bearing rather than optional. The old `weekly_linkedin_digest.py` email draft stays retired (manual dispatch only).
 
 Repo: `C:\coding_projects\sportstech-digest`  
 GitHub: https://github.com/iddodi33/sportstech-digest (branch: main)
@@ -31,7 +31,8 @@ sportstech-digest/
                                  daily_monitor reads GOOGLE_NEWS_FEEDS + REGIONAL_RSS_FEEDS only;
                                  SITE_RSS_FEEDS is read solely by the monthly.yml path.
   weekly_linkedin_digest.py      RETIRED 2026-07-24 (manual dispatch only); replaced by Cowork scheduled tasks
-  weekly_cover.py                Weekly cover image renderer (GH Actions, hourly Fri firings, picks-hash idempotent)
+  weekly_cover.py                Weekly cover image + carousel renderer (GH Actions, hourly Fri firings, picks-hash idempotent)
+  carousel_slides.py             Carousel slide layouts and PDF assembly, imported by weekly_cover.py (added 2026-09-05)
   assets/cover/                  Brand assets for the cover (logo PNG, Bebas Neue TTF)
   supabase_client.py             News: upserts scored articles to hub
   jobs_pipeline/                 Weekly jobs scraper (Friday 06:00 UTC)
@@ -144,7 +145,7 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | `monthly.yml` | `0 7 * * 0` | UN-RETIRED 2026-09-04 (weekly, Sun 07:00 UTC). Only path that reads `SITE_RSS_FEEDS` + `REGIONAL_RSS_FEEDS`; while its cron was off (2026-07-24 → 2026-09-04) the site-RSS half of news discovery ran nowhere. Still sends the research email. |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
 | `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
-| `weekly_cover.yml` | manual only | RETIRED 2026-08-29 — weekly LinkedIn cover image; hash-idempotent, re-renders when PICKS_JSON changes. Run manually after the Friday news brief. |
+| `weekly_cover.yml` | `20 9,10,11,12 * * 5` | Cron retired 2026-08-29, RESTORED 2026-09-05 — weekly LinkedIn cover image plus the six-slide carousel PDF; hash-idempotent, re-renders when PICKS_JSON changes. The Friday post depends on it. |
 | `weekly_linkedin_digest.yml` | manual only | RETIRED 2026-07-24 — replaced by Cowork scheduled tasks (see STATUS.md) |
 | `monthly_28th.yml` | manual only | RETIRED 2026-08-29 — newsletter-source export only (slimmed 2026-07-24; digest/jobs/events steps removed). Run manually ahead of the 29th newsletter build when needed. |
 
