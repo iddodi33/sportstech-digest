@@ -1,12 +1,81 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-09-04*
+*Last updated: 2026-09-11*
 
 Rolling log of changes and open issues. Most recent session first.
 
 ---
 
-## Session 2026-09-04 — Google Alerts audit, then source-discovery calibration
+## Session 2026-09-11 — weekly_cover.yml silently stopped firing; Wednesday AI-video "miss" was correct behaviour; two pick corrections traced
+
+### weekly_cover.yml never fired this week (Issue open, fix identified, NOT yet applied)
+
+The 11 Sep Cockpit carousel task sat with zero attachments past its last 12:20 UTC cron slot.
+Checked via the GitHub Actions REST API (public repo, unauthenticated reads): last scheduled
+run of `weekly_cover.yml` is run #14, 28 Aug 20:56 UTC. Zero runs since — spans the 5 Sep
+schedule restore (see 2026-09-04 session-adjacent commits) and all four of 11 Sep's cron
+slots. Workflow file on `main` has the correct `cron: '20 9,10,11,12 * * 5'`, byte-identical
+to the working tree; `state: "active"`; repo pushes daily via `daily_monitor.yml` with no
+issue, so this is not a repo-wide Actions outage.
+
+**Best-diagnosis root cause**: removing a workflow's `schedule:` trigger (27 Aug retirement
+commit) and later re-adding it (5 Sep restore commit) does not reliably make GitHub
+re-register the cron with its internal scheduler, even though the workflow shows
+`state: active` and the file content is correct. Documented class of GitHub Actions bug, not
+a bug in this repo's code — nothing in `weekly_cover.yml` or `weekly_cover.py` needs to
+change.
+
+**Fix, not yet applied**: disable then re-enable the workflow to force GitHub to
+re-register the schedule. Actions UI → `weekly_cover.yml` → "..." menu (top right) →
+Disable workflow → reload → Enable workflow. Or `gh workflow disable weekly_cover.yml &&
+gh workflow enable weekly_cover.yml` from an authenticated shell. Needs to be done by Iddo
+(or by Claude once signed into GitHub in a session that has browser access) — the
+09-11 session had no authenticated route to GitHub's write API. **Watch the 18 Sep run** to
+confirm the cron actually resumes; if it silently stalls again, this needs a GitHub support
+ticket rather than another disable/enable cycle.
+
+Same-day workaround used: `weekly_cover.py`'s renderer was run manually in-session
+(`carousel_slides.render_carousel`, unchanged) to produce the 6 slides for the 11 Sep post
+from that day's PICKS_JSON, since the Cowork sandbox cannot reach `*.supabase.co` Storage
+directly (egress-blocked, confirmed via 403) and so could not do the automated
+upload/attach itself. Cockpit task `1b77de28-29b6-49db-94c9-eb591ca4c61b` notes/attachments
+were left for the real pipeline to populate once the schedule fix lands, then hand-edited
+twice for the pick corrections below.
+
+### Wednesday AI-video trigger — NOT a bug, thin-week rule worked as designed
+
+Iddo flagged no AI-video Cockpit task on 9 Sep. This is a Cowork scheduled task
+(`trig_01GJqDqHsSETZ1tigP8bT725`), not part of this repo, but logged here since it was
+investigated alongside the carousel issue. Confirmed via `list_triggers`: the trigger is
+`enabled: true`, its 9 Sep run fired and completed (09:05:48 UTC, ~65s, consistent with a
+full evaluation rather than an early exit), and its `next_run_at` is already queued for
+16 Sep — nothing needs re-enabling, it will fire automatically next week regardless. The
+trigger's own mandatory source query (`social_posts` tagged `ai`, `source_kind in
+(personal_ai, ecosystem_global)`, 14-day window) returned only 22 rows for that run, almost
+all general AI-industry commentary rather than AI-in-sport claims. Fewer than 2 usable
+stories → the THIN-WEEK RULE correctly produced no video and no Cockpit row. Not
+independently confirmed by reading the run's own transcript (no tool available for that);
+if a future week comes up empty despite an obviously rich AI-in-sport pool, that is the
+signal to actually dig into the filter rather than assume thin-week again.
+
+### Two pick corrections, same-day, after the 11 Sep carousel/post were already drafted
+
+1. **FAI misattribution.** The 11 Sep PICKS_JSON (as the Friday trigger itself wrote it)
+   carried a pick chipped "FAI" sourced from an `opportunitydesk.org` AI-policy-internship
+   listing — actually "The Foundation for American Innovation" (US policy think tank), not
+   Ireland's FAI, and not sport-related. This is a **data-quality bug upstream of the
+   trigger**, in whatever scored/passed this story through `news_items` ingestion — NOT
+   root-caused this session (would need tracing the specific row through `news_pipeline.py`
+   / `daily_monitor.py` scoring). Worth a follow-up if it recurs.
+2. **Enterprise Ireland delegation should have led.** Iddo supplied the real story directly
+   (14 Irish sportstech companies, Enterprise-Ireland-organised delegation to South Africa,
+   14 Sep) after Cowork's own replacement pick (a solo Wiistream story, inferred from one
+   LinkedIn post) turned out to be an incomplete guess at the same underlying story.
+   PICKS_JSON reordered so the delegation leads; Cockpit task updated a second time.
+
+Neither correction needed a pipeline or renderer change — both were pick-level data issues,
+handled by hand-editing the Cockpit task notes after the fact.
+
 
 ### The audit
 
