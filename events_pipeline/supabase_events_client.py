@@ -246,3 +246,91 @@ def collapse_recurring_series(name: str, recurrence: str | None) -> list[str]:
             log.warning("failed to collapse recurring event %s: %s", rid, exc)
 
     return rejected
+
+
+# ── event_leads ───────────────────────────────────────────────────────────────
+#
+# Separate table, separate review queue, separate upsert path. Nothing here
+# writes to `events` — a lead becomes an event only when a human promotes it
+# (event_leads.promoted_event_id). See supabase/migrations/20260914_event_leads.sql.
+
+def upsert_event_lead(lead: dict) -> tuple[str | None, bool]:
+    """Insert or update one LinkedIn event lead, keyed on linkedin_post_id.
+
+    Returns (lead_id, was_inserted). Returns (None, False) on any failure —
+    errors are logged, never raised, so one bad row cannot cost a run the rest.
+
+    On a re-seen post the triage fields (status, rejected_reason, reviewed_at,
+    reviewed_by, promoted_event_id) are never touched: LinkedIn will keep
+    returning a post for as long as it is inside the postedLimit window, and
+    re-scraping it must not resurrect something already rejected. Only
+    last_seen_at, engagement counts and the matcher list move — the last of
+    those because a post picked up by a second keyword this week is a stronger
+    lead than it was last week.
+    """
+    client = _get_client()
+    if client is None:
+        return None, False
+
+    post_id = (lead.get("linkedin_post_id") or "").strip()
+    if not post_id:
+        log.warning("upsert_event_lead: lead has no linkedin_post_id — skipping")
+        return None, False
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+    matched_all = lead.get("matched_all") or [
+        f"{lead.get('matched_by')}:{lead.get('matched_value')}"
+    ]
+
+    try:
+        existing = (
+            client.table("event_leads")
+            .select("id, matched_all")
+            .eq("linkedin_post_id", post_id)
+            .execute()
+        )
+
+        if existing.data:
+            row = existing.data[0]
+            lead_id = row["id"]
+            merged = list(row.get("matched_all") or [])
+            for matcher in matched_all:
+                if matcher not in merged:
+                    merged.append(matcher)
+            client.table("event_leads").update({
+                "last_seen_at": now_ts,
+                "matched_all":  merged,
+                "reactions":    lead.get("reactions", 0),
+                "comments":     lead.get("comments", 0),
+                "raw":          lead.get("raw"),
+            }).eq("id", lead_id).execute()
+            return lead_id, False
+
+        result = client.table("event_leads").insert({
+            "linkedin_post_id":    post_id,
+            "post_url":            lead.get("post_url"),
+            "author_name":         lead.get("author_name"),
+            "author_linkedin_url": lead.get("author_linkedin_url"),
+            "author_type":         lead.get("author_type"),
+            "matched_by":          lead.get("matched_by"),
+            "matched_value":       lead.get("matched_value"),
+            "matched_all":         matched_all,
+            "content":             lead.get("content"),
+            "posted_at":           lead.get("posted_at"),
+            "reactions":           lead.get("reactions", 0),
+            "comments":            lead.get("comments", 0),
+            "raw":                 lead.get("raw"),
+            "source":              "linkedin_keywords",
+            "status":              "pending",
+            "scraped_at":          now_ts,
+            "first_seen_at":       now_ts,
+            "last_seen_at":        now_ts,
+        }).execute()
+
+        if result.data:
+            return result.data[0]["id"], True
+        return None, False
+
+    except Exception as exc:
+        log.error("upsert_event_lead failed for post %s: %s", post_id, exc)
+        return None, False

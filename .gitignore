@@ -13,4 +13,10 @@ research/
 .venv/jobs_discovery/probe_log.txt
 !jobs_discovery/career_pages.csv
 !jobs_discovery/companies_to_discover.csv
+# Load-bearing at runtime: adapters/linkedin_keywords.py reads the seed list on
+# every run, so if *.csv swallows it the Friday Actions run silently degrades to
+# keyword-only with zero seeds. The resolver output is committed alongside it so
+# the 16 unverified LSPs stay reviewable rather than living only on one laptop.
+!events_pipeline/data/linkedin_seed_authors.csv
+!events_pipeline/data/lsp_linkedin_resolved.csv
 news_raw_*.json

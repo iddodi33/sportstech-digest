@@ -10,7 +10,7 @@
 
 1. **News pipeline** — scrapes Irish sportstech news, scores with Claude Sonnet 4.5, emails daily alerts and a monthly research markdown, upserts score 3+ articles to the hub.
 2. **Jobs pipeline** — scrapes weekly job listings from 10 ATS platforms plus two LinkedIn paths (Apify for `linkedin_only` companies, Serper discovery for `none_found` companies), classifies via rule-based pre-filter + relevance filter + Haiku 4.5, archives stale jobs, upserts to the hub.
-3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review.
+3. **Events pipeline** — scrapes weekly events from 5 sources, extracts structured data via Claude Sonnet 4.5, upserts pending events to the hub for admin review. A 6th source added 2026-09-14 searches LinkedIn by keyword and by curated organiser pages (Apify, `harvestapi/linkedin-post-search`) and lands raw posts in `public.event_leads` — a separate triage queue, no Claude step, never `public.events`.
 4. **Weekly LinkedIn posts (Cowork-owned since 2026-07-24)** — the Friday news brief and Monday jobs post are drafted by Cowork scheduled tasks that pull news_items + social_posts / approved jobs straight from the hub and write Cockpit tasks (`ops.tasks`, source_schema `sd3-weekly-post`). This repo's part is `weekly_cover.yml` + `weekly_cover.py` + `carousel_slides.py`, which render the branded cover image AND the six-slide carousel (a cover slide plus one per pick, as PNGs and a six-page PDF) from the picks and attach them to the Cockpit task. `weekly_cover.yml`'s cron was retired 2026-08-29 and RESTORED 2026-09-05, because the Friday post is now a carousel and the render is load-bearing rather than optional. The old `weekly_linkedin_digest.py` email draft stays retired (manual dispatch only).
 
 Repo: `C:\coding_projects\sportstech-digest`  
@@ -50,8 +50,11 @@ sportstech-digest/
     run_<platform>.py            Per-platform entry points
   events_pipeline/               Weekly events scraper (Friday 06:00 UTC)
     extractor.py                 HTML → Claude → structured event JSON
-    run_weekly_events.py         Full weekly orchestrator
-    adapters/                    5 event source adapters
+    run_weekly_events.py         Full weekly orchestrator (the 5 structured sources)
+    adapters/                    5 event source adapters + linkedin_keywords.py (6th, separate path)
+    run_linkedin_leads.py        6th source entry point — LinkedIn keyword/seed-author leads
+    resolve_lsp_linkedin.py      One-off: resolve the 29 LSPs to LinkedIn pages (Serper, corroborated)
+    data/                        linkedin_seed_authors.csv (live seeds), lsp_linkedin_resolved.csv (proposals)
     weekly/                      runner, snapshot, email, sendgrid
   jobs_discovery/                One-off career page discovery scripts
   research/                      Monthly news markdown output
@@ -77,6 +80,23 @@ sportstech-digest/
   keeps and processes work already paid for, logs the abort distinguishably, alerts, and
   exits non-zero. Typed confirmation still applies to anything a human runs by hand
   (e.g. `scripts/audit_alerts_vs_hub.py`).
+- **One standing exception to the cost-ceiling rule, and only one.**
+  `events_pipeline/run_linkedin_leads.py` (the LinkedIn event-lead step) runs
+  unattended on Friday cron with **no aborting cost ceiling**. That is Iddo's
+  explicit v1 call — run it, see what it spends, then decide. It is recorded here
+  so nobody "fixes" it by accident and nobody treats it as precedent. Standing in
+  for the ceiling: `MAX_POSTS_PER_QUERY` caps every actor call, the query list is
+  fixed-length rather than derived at runtime, and real billed spend per call goes
+  to `scripts/data/apify_spend.jsonl`. Revisit once that log has a few Fridays in
+  it. Every *other* unattended script still gets a real ceiling.
+- **Apify spend is metered separately from Anthropic spend, on purpose.**
+  `run_telemetry.py` has two independent halves: a per-MTok model rate table, and
+  an Apify per-event section writing `apify_spend.jsonl`. Do not merge them — the
+  "model bumps must update the rates" rule below would then fire on changes that
+  have nothing to do with Anthropic pricing. Apify costs come from the run
+  object's own event counts x its own event prices, never from hardcoded rates;
+  see `charged_cost_usd()` and the ARCHITECTURE.md note on why `usageTotalUsd`
+  alone under-reports.
 - **Model bumps must update `run_telemetry.py`'s rates in the same change.**
   `run_telemetry.py` hardcodes the current `MODEL`'s per-MTok rates, and **both pipelines'
   `RUN_COST_CEILING_USD` are enforced against them**. Bump the model without the rates and
@@ -142,7 +162,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://xwqmnofkvdwpagfweqmj.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY      Informational only
 SUPABASE_SERVICE_ROLE_KEY          Required for all hub upserts
 SERPER_API_KEY                     LinkedIn jobs adapter — none_found sources only (free tier 2,500/month)
-APIFY_TOKEN                        LinkedIn jobs adapter — linkedin_only sources only (Apify LinkedIn Jobs Scraper actor). Optional: missing token degrades the linkedin_apify weekly step to a logged warning, does not abort the pipeline.
+APIFY_TOKEN                        Two consumers: the LinkedIn *jobs* adapter (linkedin_only sources, curious_coder actor) and the LinkedIn *events* lead adapter (harvestapi/linkedin-post-search). Optional for jobs: a missing token degrades the linkedin_apify weekly step to a logged warning. Required for the events LinkedIn step, which exits 1 without it (continue-on-error in the workflow, so the events run still passes).
 ADZUNA_APP_ID, ADZUNA_APP_KEY      Legacy CSV scraper only
 ```
 
@@ -159,7 +179,8 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | Anthropic — jobs | `claude-haiku-4-5-20251001` |
 | Anthropic — news/events | `claude-sonnet-4-5-20250929` |
 | Serper | google.serper.dev, free tier, LinkedIn job URL discovery (`none_found` sources) |
-| Apify | `curious_coder/linkedin-jobs-scraper` actor, live LinkedIn job search (`linkedin_only` sources) |
+| Apify — jobs | `curious_coder/linkedin-jobs-scraper` actor, live LinkedIn job search (`linkedin_only` sources) |
+| Apify — events | `harvestapi/linkedin-post-search` actor, LinkedIn post search by keyword + organiser page. PAY_PER_EVENT, $0.002/post at BRONZE tier (verified 2026-09-14) |
 
 ---
 
@@ -170,7 +191,7 @@ GitHub Actions secrets must mirror all of the above. `ALERT_CC` is optional — 
 | `daily_monitor.yml` | `0 9 * * *` | News alerts |
 | `monthly.yml` | `0 7 * * 0` | UN-RETIRED 2026-09-04 (weekly, Sun 07:00 UTC). Only path that reads `SITE_RSS_FEEDS` + `REGIONAL_RSS_FEEDS`; while its cron was off (2026-07-24 → 2026-09-04) the site-RSS half of news discovery ran nowhere. Still sends the research email. |
 | `jobs_weekly.yml` | `0 6 * * 5` | Jobs orchestrator |
-| `events_weekly.yml` | `0 6 * * 5` | Events orchestrator |
+| `events_weekly.yml` | `0 6 * * 5` | Events orchestrator (5 structured sources), then the LinkedIn event-lead step, then commits `scripts/data/apify_spend.jsonl` |
 | `weekly_cover.yml` | `20 9,10,11,12 * * 5` | Cron retired 2026-08-29, RESTORED 2026-09-05 — weekly LinkedIn cover image plus the six-slide carousel PDF; hash-idempotent, re-renders when PICKS_JSON changes. The Friday post depends on it. |
 | `weekly_linkedin_digest.yml` | manual only | RETIRED 2026-07-24 — replaced by Cowork scheduled tasks (see STATUS.md) |
 | `monthly_28th.yml` | manual only | RETIRED 2026-08-29 — newsletter-source export only (slimmed 2026-07-24; digest/jobs/events steps removed). Run manually ahead of the 29th newsletter build when needed. |
@@ -213,6 +234,12 @@ python jobs_pipeline/run_weekly.py --skip-email
 python events_pipeline/test_extractor.py "<url>"
 python events_pipeline/test_extractor.py "<url>" --upsert
 
+# Events — LinkedIn leads (6th source; writes event_leads, not events)
+python events_pipeline/run_linkedin_leads.py --dry-run --limit 1   # one actor call, ~$0.05
+python events_pipeline/run_linkedin_leads.py --dry-run
+python events_pipeline/run_linkedin_leads.py
+python events_pipeline/resolve_lsp_linkedin.py                     # one-off LSP page resolution
+
 # Events — full weekly orchestrator
 python events_pipeline/run_weekly_events.py
 python events_pipeline/run_weekly_events.py --skip-email --limit 5
@@ -238,3 +265,5 @@ The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Py
 - `upsert_news_item_if_higher_score` RPC signature (12 args)
 - `upsert_event_if_new` RPC signature (14 args)
 - PICKS_JSON contract between the Cowork Friday news-brief trigger and `weekly_cover.py` (final line of the Cockpit task notes: `PICKS_JSON: [{"company","slug","news_url"}]`)
+- `public.events` and the 5 structured event adapters — the LinkedIn event-lead source writes only to `public.event_leads`, and a lead reaches `events` only when a human promotes it
+- The seed list in `events_pipeline/data/linkedin_seed_authors.csv` is hand-reviewed. Never add a LinkedIn page to it from a slug guess or an uncorroborated resolver row

@@ -1,0 +1,27 @@
+# Seed author/organiser LinkedIn pages watched by adapters/linkedin_keywords.py.
+# Only rows with enabled=true are sent to the Apify actor. Lines starting with #
+# and blank lines are ignored, so a seed can be parked with a note rather than deleted.
+#
+# origin=curated   : confirmed live by hand (Iddo, 2026-09-14).
+# origin=resolver  : produced by resolve_lsp_linkedin.py and corroborated
+#                    (verdict=verified in data/lsp_linkedin_resolved.csv).
+# The 16 LSPs that resolved needs_manual_review / not_found are NOT here - see
+# that CSV. Do not promote one into this file from a slug guess; open the page first.
+name,linkedin_url,category,enabled,origin,notes
+SPOBIS International,https://www.linkedin.com/company/spobis-international,conference,true,curated,Major European sports-business conference
+ISPO Munich,https://www.linkedin.com/company/ispo-munich,conference,true,curated,Major European sports/outdoor trade fair
+Enterprise Ireland,https://www.linkedin.com/company/enterprise-ireland,agency,true,curated,Irish state enterprise agency - runs sportstech trade missions
+"ATU Galway, Dept of Sport, Exercise & Nutrition",https://www.linkedin.com/company/atu-galway-department-of-sport-exercise-nutrition,university,true,curated,Organiser of Digital Innovation for Sport (a verified hub event)
+Cavan Sports Partnership,https://www.linkedin.com/company/cavan-sports-partnership,lsp,true,resolver,
+Clare Sports Partnership,https://www.linkedin.com/company/clare-sports-partnership,lsp,true,resolver,
+Cork Local Sports Partnership,https://www.linkedin.com/company/cork-local-sports-partnership,lsp,true,resolver,Independently confirmed by Iddo 2026-09-14
+Dun Laoghaire Rathdown Sports Partnership,https://www.linkedin.com/company/dlr-sports-partnership,lsp,true,resolver,
+Kildare Sports Partnership,https://www.linkedin.com/company/kildare-sports-partnership,lsp,true,resolver,Independently confirmed by Iddo 2026-09-14
+Laois Sports Partnership,https://www.linkedin.com/company/laois-sports-partnership,lsp,true,resolver,Independently confirmed by Iddo 2026-09-14
+Limerick Sports Partnership,https://www.linkedin.com/company/limerick-sports-partnership,lsp,true,resolver,
+Louth Local Sports Partnership,https://www.linkedin.com/company/louth-local-sports-partnership,lsp,true,resolver,
+Mayo Local Sports Partnership,https://www.linkedin.com/company/mayo-local-sports-partnership,lsp,true,resolver,
+Meath Local Sports Partnership,https://www.linkedin.com/company/meath-local-sports-partnership,lsp,true,resolver,Organiser of the Women in Sport Conference 2026 that prompted this adapter
+Roscommon Sports Partnership,https://www.linkedin.com/company/roscommon-sports-partnership-rsp,lsp,true,resolver,
+Waterford Sports Partnership,https://www.linkedin.com/company/waterford-sports-partnership,lsp,true,resolver,
+Wicklow Sports & Recreation Partnership,https://www.linkedin.com/company/wicklow-sports-recreation-partnership,lsp,true,resolver,

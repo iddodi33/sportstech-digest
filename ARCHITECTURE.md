@@ -571,3 +571,89 @@ the 2026-07-14 audit found the oldest pending row was from **2025-02-24** (17 mo
 One-off cleanup that session: 50 stale-dated pending events rejected via this sweep, plus a
 separate one-off bulk SQL pass for the `ai_tech_ireland` backlog not already caught by
 staleness (31 more) — net 86 pending → 5 pending.
+
+### 6th source: LinkedIn event leads (`linkedin_keywords`, added 2026-09-14)
+
+A sixth event source, wired into `events_weekly.yml` as **its own step**, not as a
+sixth entry in `run_weekly_events.py`'s adapter registry.
+
+**Why it exists.** The 5 adapters above watch 5 known listing sites. Meath Sports
+Partnership's *Women in Sport Conference 2026* appeared on none of them, was not
+found by a manual web search while building the newsletter, and would not have been
+caught by the hub's LinkedIn Radar (`public.social_posts`) either — that radar
+tracks companies already known to the hub, and a county Local Sports Partnership is
+not one. It surfaced only because Iddo saw it on LinkedIn. This source searches
+LinkedIn **by topic and by organiser** rather than by already-known-company.
+
+| Piece | File |
+|---|---|
+| Adapter | `events_pipeline/adapters/linkedin_keywords.py` |
+| Entry point | `events_pipeline/run_linkedin_leads.py` (`--dry-run`, `--keywords-only`, `--authors-only`, `--limit N`) |
+| Seed organiser list | `events_pipeline/data/linkedin_seed_authors.csv` (hand-reviewed; only `enabled=true` rows are queried) |
+| LSP resolver (one-off) | `events_pipeline/resolve_lsp_linkedin.py` → `events_pipeline/data/lsp_linkedin_resolved.csv` |
+| Landing table | `public.event_leads` (`supabase/migrations/20260914_event_leads.sql`) |
+| Cost log | `scripts/data/apify_spend.jsonl` (via `run_telemetry.record_apify_run`) |
+
+**Actor:** `harvestapi/linkedin-post-search`, PAY_PER_EVENT, $0.002/post at BRONZE
+tier, no cookies or login. Same vendor family as the LinkedIn Radar's harvestapi
+actors. Pricing re-verified against the actor's own pricing block 2026-09-14.
+
+**Queries.** 7 sport-qualified keywords x 3 geographies (Ireland, UK, Europe) = 21
+keyword queries, plus one query per enabled seed organiser page. One actor call per
+query: `maxPosts` is per-search-query, so batching makes per-query volume and cost
+unpredictable, and a batched `authorUrls` run gives no per-author attribution at all.
+Keywords are never bare "AI"/"tech" — the 5 structured adapters already over-scrape
+generic AI/tech noise (64 of 149 rejected events are `ai_tech_ireland_auto_reject`),
+and an unqualified LinkedIn keyword search would be strictly worse.
+
+**Seed queries carry no keyword filter.** Seed pages are curated organisers, so
+everything they post in the window is worth a look. Filtering them by keyword would
+re-introduce the exact blind spot this source exists to close — the Meath conference
+post does not contain the word "sportstech".
+
+**`event_leads`, not `events`.** Keyword-matched posts have a far higher
+false-positive rate than a structured listing page, so they get their own review
+queue. Nothing reaches `events.*` except by a human promoting a lead
+(`event_leads.promoted_event_id`). There is deliberately **no Claude extraction
+step** in v1 — raw links first, structured extraction only once the real
+false-positive rate is known. Re-upserting a post never touches its triage fields
+(`status`, `rejected_reason`, `reviewed_at`, `reviewed_by`, `promoted_event_id`):
+LinkedIn keeps returning a post for as long as it is inside the `postedLimit`
+window, and re-scraping must not resurrect something already rejected. Dedup is on
+`linkedin_post_id`; `matched_all` accumulates every keyword/seed that hit the post,
+across queries and across runs, because multi-match is itself a triage signal.
+
+**Apify cost accounting — read this before touching it.** The run object carries
+two cost fields that settle at different speeds. `chargedEventCounts` populates
+within a second or two of a run reporting SUCCEEDED; `usageTotalUsd` lags far
+behind and reads as little as the actor-start charge alone in the meantime
+(measured 2026-09-14: a 10-post run read **$0.0001** immediately after completion
+and **$0.02005** a minute later). `charged_cost_usd()` therefore derives the total
+from `chargedEventCounts` x the run's own
+`pricingInfo.pricingPerEvent.actorChargeEvents.*.eventPriceUsd` — the same
+arithmetic Apify does, run earlier, with nothing hardcoded, so a tier or vendor
+price change is picked up automatically. Both figures are written to the spend log
+(`usage_total_usd` derived, `usage_reported_usd` as-read) so a future divergence is
+visible rather than silent.
+
+**No cost ceiling — a knowing exception to the CLAUDE.md house rule.** Iddo's
+explicit call for v1: run it and see what it spends before deciding whether a
+ceiling belongs here. Standing in for one meanwhile: `MAX_POSTS_PER_QUERY` (25)
+caps every call actor-side, the query set is a fixed-length list rather than
+anything derived at runtime, and every call's real billed cost lands in
+`scripts/data/apify_spend.jsonl` — committed back by the workflow, since a runner's
+filesystem is discarded. Revisit once that log has a few Fridays in it.
+
+**LSP resolution is corroborated, never guessed.** The 29 Local Sports Partnerships
+come from Sport Ireland's own LSP Contact Finder. `resolve_lsp_linkedin.py` asks
+Serper which LinkedIn company page ranks for each exact name, then requires the
+county token **and** a sport token (`sport`/`recreation`/`active`/`wellbeing`) in
+the returned page title before marking it `verified`. Same discipline as
+`_corroborate_ats()` in the jobs pipeline, for the same reason: a slug that
+resolves proves a page exists, not that it is *this* organisation's page.
+`partnership` is deliberately not a sport token — Ireland is full of county-level
+LEADER and local-development "partnerships", and including it let Kilkenny LEADER
+Partnership through as Kilkenny Recreation & Sports Partnership on the first run.
+It fails closed: of 29, **13 verified, 7 needs_manual_review, 9 not_found**. The 16
+non-verified are *not* in the seed CSV and must be confirmed by opening the page
+before being added.

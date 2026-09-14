@@ -6,6 +6,108 @@ Rolling log of changes and open issues. Most recent session first.
 
 ---
 
+## Session 2026-09-14 (second) — 6th event source: LinkedIn keyword + organiser-page lead discovery
+
+### Why
+
+On 14 Sep we found, by manual research rather than by reading this code, that Meath
+LSP's **Women in Sport Conference 2026** was caught by none of the 5 event adapters,
+nor by a manual web search while building the newsletter. The hub's LinkedIn Radar
+(`public.social_posts`) would not have caught it either — that radar watches companies
+already known to the hub, and a county Local Sports Partnership is not one. It surfaced
+only because Iddo saw it on LinkedIn. This session added a 6th source that searches
+LinkedIn **by topic and by organiser** instead of by already-known-company.
+
+### What shipped
+
+- `public.event_leads` (migration `supabase/migrations/20260914_event_leads.sql`, applied).
+  Separate table, separate triage queue, never `public.events`.
+- `events_pipeline/adapters/linkedin_keywords.py` — Apify `harvestapi/linkedin-post-search`.
+- `events_pipeline/run_linkedin_leads.py` — entry point (`--dry-run`, `--keywords-only`,
+  `--authors-only`, `--limit N`).
+- `events_pipeline/resolve_lsp_linkedin.py` + `data/lsp_linkedin_resolved.csv` — one-off
+  Serper resolution of the 29 LSPs, corroborated.
+- `events_pipeline/data/linkedin_seed_authors.csv` — the 17 hand-reviewed live seeds.
+- `run_telemetry.py` — new Apify spend section + `scripts/data/apify_spend.jsonl`.
+- `events_weekly.yml` — new step after the 5-source run (`if: always()`,
+  `continue-on-error: true`), plus a commit-back step for the spend log.
+
+### First real run (2026-09-14, 8m 26s)
+
+| | |
+|---|---|
+| Queries | 38 (21 keyword, 17 seed author), 0 failed |
+| Posts fetched | 494 — 453 keyword, 41 seed author |
+| Unique leads written | **384** (all new; 83 matched by more than one query) |
+| Real Apify spend | **$0.9929** |
+
+**The acceptance test passed.** The Meath LSP Women in Sport Conference 2026 landed —
+two speaker-announcement posts via the `meath-local-sports-partnership` seed, one of
+which was *also* caught by the `sport innovation Ireland` keyword.
+
+### Three things the first run exposed
+
+**1. `usageTotalUsd` under-reports by ~2.7x, and would have made the spend log useless.**
+The run object's two cost fields settle at different speeds. `chargedEventCounts` is
+populated within a second or two of a run reporting SUCCEEDED; `usageTotalUsd` lags far
+behind and reads as little as the actor-start charge alone in the meantime. Measured: a
+10-post run read **$0.0001** immediately after completion, **$0.02005** a minute later.
+Across the full 38-query run, the as-read figures sum to **$0.3639** against a true
+**$0.9929**. Since this log is the only thing standing in for a cost ceiling, trusting
+`usageTotalUsd` would have defeated the purpose. `charged_cost_usd()` now derives the
+total from `chargedEventCounts` x the run's own per-event prices — the same arithmetic
+Apify does, run earlier, nothing hardcoded. Both figures are logged
+(`usage_total_usd` derived, `usage_reported_usd` as-read) so a divergence stays visible.
+
+**2. 18 of 21 keyword queries hit the `maxPosts` cap exactly.** They returned exactly 25
+posts, i.e. they were **truncated**, sorted by date, so we are seeing the most recent 25
+of an unknown larger set. Coverage and cost both scale linearly with
+`MAX_POSTS_PER_QUERY`. Do not read "494 posts" as "494 posts existed".
+
+**3. Retrying restarted a paid actor run.** A transient failure while polling or fetching
+the dataset re-entered `_call_actor_once`, which started a *second* billed run for a query
+already paid for. Fixed: failures past the start POST carry the run id on the exception and
+the retry resumes that run. Matters more here than in the jobs adapter, which has a ceiling.
+
+### Quality signal, and the open question
+
+A crude regex for event language (conference/summit/webinar/register/tickets/RSVP/...)
+matches **24%** of leads — 28% of seed-author leads, 23.5% of keyword leads. That is a
+ceiling on precision, not a measurement of it: many matches will be people *attending*
+or *recapping* an event rather than an event we can list. **384 leads/week is too many
+for manual triage**, so the real decision after Iddo reviews a batch is whether to
+(a) drop the weakest keywords, (b) go seed-author-heavy, or (c) add the Claude
+extraction/filter step that v1 deliberately omitted. Per-keyword event-signal counts are
+in `event_leads` — `sport innovation Ireland` led at 12/25, `sport and AI Europe` and
+`sportstech Ireland` trailed at 2 and 1.
+
+### LSP resolution: 13 of 29 verified, and the gate earned its keep
+
+`resolve_lsp_linkedin.py` asks Serper which LinkedIn company page ranks for each exact
+LSP name, then requires the county token **and** a sport token in the returned page title
+before marking it verified. Same discipline as `_corroborate_ats()` in the jobs pipeline.
+It caught two genuine mis-attributions: a **Roscommon** page returned for a **Westmeath**
+query, and — once `partnership` was removed from the sport-token list — **Kilkenny LEADER
+Partnership** returned for **Kilkenny Recreation & Sports Partnership**. `partnership` on
+its own corroborates nothing in Ireland, where every county has a LEADER/local-development
+partnership; that is the `onezero`/`ea` failure mode exactly. Result: **13 verified,
+7 needs_manual_review, 9 not_found**. Iddo's four hand-confirmed pages (Meath, Cork,
+Laois, Kildare) all resolved independently to the same slugs.
+
+### Open / next session
+
+- **No cost ceiling on this step** — Iddo's explicit v1 call, now recorded as the single
+  standing exception in CLAUDE.md. One run = $0.99, so ~$52/yr at this cadence. Decide
+  after 2-3 Fridays of `apify_spend.jsonl`.
+- **16 LSPs still unresolved** (7 needs_manual_review, 9 not_found — Carlow, Fingal,
+  Galway, Kerry, Leitrim, Monaghan, Sligo, South Dublin, Tipperary found nothing at all).
+  Several likely have no LinkedIn presence; confirm by hand before adding any.
+- **Triage volume.** 384 pending leads with no admin-panel view yet — `event_leads` has an
+  authenticated-read RLS policy but nothing in sd3-intelligence-hub renders it.
+- **`promoted_event_id` is wired but unused** — no path yet promotes a lead into `events`.
+
+---
+
 ## Session 2026-09-14 — jobs discovery audit: `none_found` was an architecture gap, not a Serper bug; `custom_html` adapter built; Apify retry + stale-error fix
 
 ### Headline: the premise going in was wrong, and that changed the fix

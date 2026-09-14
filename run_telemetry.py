@@ -1,14 +1,18 @@
-"""run_telemetry.py — append-only instrumentation for the daily news run.
+"""run_telemetry.py — append-only instrumentation for the scheduled pipelines.
 
-Two rolling logs, both JSONL (one JSON object per line) so a week of runs
-accumulates without rewriting earlier records:
+Rolling logs, all JSONL (one JSON object per line) so a week of runs accumulates
+without rewriting earlier records:
 
   scripts/data/daily_monitor_usage.jsonl     real billed token usage per API call
   scripts/data/regional_cap_drops.jsonl      items CAP_REGIONAL truncated
+  scripts/data/regional_feed_stats.jsonl     per-feed outcome, including zeroes
+  scripts/data/apify_spend.jsonl             real billed Apify $ per actor call
 
 Token counts come from `response.usage` on the Anthropic response object — the
 actual billed figures the API returns, not a token-counter estimate and not
-arithmetic over prompt text.
+arithmetic over prompt text. Apify costs likewise come from `usageTotalUsd` on
+the run object, i.e. the platform's own billed total, not our arithmetic over
+its published rates (see the Apify section at the bottom of this file).
 
 Persistence: these files are committed back to the repo by the workflow's existing
 "Commit seen URLs" step. A GitHub Actions runner's filesystem is discarded when the
@@ -168,3 +172,82 @@ def record_cap_drops(feed_url: str, source_label: str, dropped: list[dict],
             "pubDate":       item.get("pubDate", ""),
             "link":          item.get("link", ""),
         })
+
+
+# ── Apify spend ───────────────────────────────────────────────────────────────
+#
+# Deliberately a parallel structure to the Anthropic accounting above, not an
+# extension of it. Everything above this line meters *token* spend against a
+# per-MTok model rate table; this meters *vendor event* spend on the Apify
+# platform, which has no tokens and no model. Sharing the rate constants or the
+# usage log between the two would make each one lie about the other — and
+# CLAUDE.md's "model bumps must update run_telemetry.py's rates" rule would
+# start firing on changes that have nothing to do with Anthropic pricing.
+#
+# Same append-only JSONL discipline, same failure-tolerance, same commit-back
+# persistence (events_weekly.yml grew a commit step for this file).
+
+APIFY_SPEND_LOG = _DATA_DIR / "apify_spend.jsonl"
+
+# harvestapi/linkedin-post-search — PAY_PER_EVENT, BRONZE tier.
+# Read off the actor's own pricing block via the Apify API on the date below,
+# not from the store listing and not from memory. These are used ONLY to
+# cross-check the authoritative figure: `usage_total_usd` on each record is
+# Apify's own billed total for the run, pulled from the run object. When the
+# two disagree, believe Apify and re-verify these constants.
+APIFY_RATE_PER_POST_USD = 0.002
+APIFY_RATE_PER_EMPTY_QUERY_USD = 0.001
+APIFY_RATE_ACTOR_START_USD = 0.00005  # per GB of run memory, minimum one
+APIFY_PRICING_VERIFIED_ON = "2026-09-14"
+
+
+def apify_estimated_cost_usd(posts: int, empty_queries: int = 0, starts: int = 1) -> float:
+    """Back-of-envelope cost for a run, for cross-checking Apify's own figure."""
+    return (
+        posts * APIFY_RATE_PER_POST_USD
+        + empty_queries * APIFY_RATE_PER_EMPTY_QUERY_USD
+        + starts * APIFY_RATE_ACTOR_START_USD
+    )
+
+
+def record_apify_run(
+    pipeline: str,
+    actor: str,
+    *,
+    run_id: str = "",
+    query_kind: str = "",
+    query_value: str = "",
+    posts_fetched: int = 0,
+    usage_total_usd: float | None = None,
+    status: str = "",
+    run_ts: str | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Append one record per Apify actor call. Returns the record (for logging).
+
+    usage_total_usd is Apify's own billed total for the run (run object field
+    `usageTotalUsd`). It is Optional because a failed or aborted call still has
+    to be logged — a run that cost money and returned nothing is exactly the
+    kind of spend this log exists to make visible.
+    """
+    record = {
+        "timestamp":            run_ts or _now(),
+        "pipeline":             pipeline,
+        "actor":                actor,
+        "run_id":               run_id,
+        "query_kind":           query_kind,   # 'keyword' | 'seed_author'
+        "query_value":          query_value,
+        "posts_fetched":        posts_fetched,
+        "status":               status,
+        "usage_total_usd":      round(usage_total_usd, 6) if usage_total_usd is not None else None,
+        "estimated_usd":        round(
+            apify_estimated_cost_usd(posts_fetched, empty_queries=0 if posts_fetched else 1),
+            6,
+        ),
+        "rate_per_post_usd":    APIFY_RATE_PER_POST_USD,
+        "pricing_verified_on":  APIFY_PRICING_VERIFIED_ON,
+    }
+    if extra:
+        record.update(extra)
+    _append(APIFY_SPEND_LOG, record)
+    return record

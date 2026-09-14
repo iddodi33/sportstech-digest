@@ -9,6 +9,12 @@ jobs:
   run_weekly_events:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      # Needed by the "Commit Apify spend telemetry" step below. A runner's
+      # filesystem is discarded when the job ends, so scripts/data/apify_spend.jsonl
+      # has to be committed back or scheduled runs produce no cost record at all —
+      # and that log is what stands in for a cost ceiling on the LinkedIn step.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -30,3 +36,40 @@ jobs:
           ALERT_TO: iddodiamant@gmail.com
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # 6th event source: LinkedIn, searched by keyword and by curated organiser
+      # pages. Lands in public.event_leads, NOT public.events — see
+      # events_pipeline/adapters/linkedin_keywords.py.
+      #
+      # A separate step rather than a 6th entry in run_weekly_events.py's adapter
+      # registry: everything that registry discovers is fed to the Claude
+      # extractor and upserted into events, which is exactly what this source is
+      # specified not to do.
+      #
+      # `if: always()` so a failure in the 5-source run above doesn't silently
+      # skip this one — they're independent sources sharing a cadence, not a
+      # pipeline. `continue-on-error` for the mirror of that: a LinkedIn or Apify
+      # outage must not mark the whole events run red.
+      - name: Run LinkedIn event-lead discovery
+        if: always()
+        continue-on-error: true
+        run: python events_pipeline/run_linkedin_leads.py
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # There is no cost ceiling on the step above (Iddo's explicit call), so this
+      # log is the only record of what it actually spends. Committing it back is
+      # what makes that record survive the runner.
+      - name: Commit Apify spend telemetry
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash || true
+          git add scripts/data/apify_spend.jsonl || true
+          git diff --staged --quiet || git commit -m "chore: apify spend telemetry $(date +%Y-%m-%d)"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
