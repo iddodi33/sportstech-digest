@@ -75,3 +75,41 @@ CREATE POLICY "Authenticated read event_leads"
   ON public.event_leads FOR SELECT
   TO authenticated
   USING (true);
+
+
+-- ── 2026-09-14 (second session): Claude classification columns ──────────────
+-- Applied as migration `event_leads_classification`.
+--
+-- The first real run put 384 leads in this table in one week. That is too many
+-- to hand-triage, and the crude event-language regex used to sanity-check the
+-- batch matched only 24% — a precision ceiling, not a filter. These columns hold
+-- a Haiku classification per lead so the same table can be sorted by confidence
+-- instead of read blind.
+--
+-- Nothing is deleted on a low score. A classifier that silently dropped rows
+-- would make its own false negatives invisible, which is exactly what this
+-- pipeline cannot afford: the founding example (Meath's Women in Sport
+-- Conference) was missed by five adapters and a manual search already.
+
+ALTER TABLE public.event_leads
+  ADD COLUMN IF NOT EXISTS is_event_relevant    boolean,
+  ADD COLUMN IF NOT EXISTS relevance_confidence smallint
+    CHECK (relevance_confidence IS NULL OR (relevance_confidence BETWEEN 0 AND 100)),
+  ADD COLUMN IF NOT EXISTS post_kind            text
+    CHECK (post_kind IS NULL OR post_kind IN (
+      'event_announcement', 'event_recap', 'attendee_post',
+      'generic_content', 'job_post', 'other')),
+  ADD COLUMN IF NOT EXISTS rating_notes         text,   -- social_posts naming
+  ADD COLUMN IF NOT EXISTS classification       jsonb,  -- raw model output, events.extraction naming
+  ADD COLUMN IF NOT EXISTS classified_at        timestamptz,
+  ADD COLUMN IF NOT EXISTS classifier_model     text;
+
+-- The triage queue this exists for: pending leads, most confident events first.
+CREATE INDEX IF NOT EXISTS idx_event_leads_triage
+  ON public.event_leads (is_event_relevant, relevance_confidence DESC)
+  WHERE status = 'pending';
+
+-- Work queue for the classifier step: pending leads not yet classified.
+CREATE INDEX IF NOT EXISTS idx_event_leads_unclassified
+  ON public.event_leads (first_seen_at)
+  WHERE classified_at IS NULL;

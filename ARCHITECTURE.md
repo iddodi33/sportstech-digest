@@ -588,28 +588,91 @@ LinkedIn **by topic and by organiser** rather than by already-known-company.
 | Piece | File |
 |---|---|
 | Adapter | `events_pipeline/adapters/linkedin_keywords.py` |
-| Entry point | `events_pipeline/run_linkedin_leads.py` (`--dry-run`, `--keywords-only`, `--authors-only`, `--limit N`) |
+| Classifier | `events_pipeline/lead_classifier.py` (Haiku, added 2026-09-14) |
+| Entry point | `events_pipeline/run_linkedin_leads.py` (`--dry-run`, `--keywords-only`, `--authors-only`, `--limit N`, `--skip-classify`) |
 | Seed organiser list | `events_pipeline/data/linkedin_seed_authors.csv` (hand-reviewed; only `enabled=true` rows are queried) |
 | LSP resolver (one-off) | `events_pipeline/resolve_lsp_linkedin.py` → `events_pipeline/data/lsp_linkedin_resolved.csv` |
 | Landing table | `public.event_leads` (`supabase/migrations/20260914_event_leads.sql`) |
-| Cost log | `scripts/data/apify_spend.jsonl` (via `run_telemetry.record_apify_run`) |
+| Cost logs | `scripts/data/apify_spend.jsonl` + `scripts/data/anthropic_spend.jsonl` |
 
 **Actor:** `harvestapi/linkedin-post-search`, PAY_PER_EVENT, $0.002/post at BRONZE
 tier, no cookies or login. Same vendor family as the LinkedIn Radar's harvestapi
 actors. Pricing re-verified against the actor's own pricing block 2026-09-14.
 
-**Queries.** 7 sport-qualified keywords x 3 geographies (Ireland, UK, Europe) = 21
-keyword queries, plus one query per enabled seed organiser page. One actor call per
-query: `maxPosts` is per-search-query, so batching makes per-query volume and cost
+**Queries.** `KEYWORD_QUERIES` is an explicit keyword x geography table (Ireland, UK,
+Europe), plus one query per enabled seed organiser page. One actor call per query:
+`maxPosts` is per-search-query, so batching makes per-query volume and cost
 unpredictable, and a batched `authorUrls` run gives no per-author attribution at all.
 Keywords are never bare "AI"/"tech" — the 5 structured adapters already over-scrape
 generic AI/tech noise (64 of 149 rejected events are `ai_tech_ireland_auto_reject`),
 and an unqualified LinkedIn keyword search would be strictly worse.
 
+**The keyword table was pruned 2026-09-14**, first against an event-language regex
+proxy and then corrected against the classifier's own labels. `KEYWORD_QUERIES` carries
+both rates per query, and 2 of 21 are disabled: `sportstech UK` (0% measured) and
+`sport and AI Europe` (8%). Disabled rows stay in the table with their numbers, and
+each run logs every combination it is not searching for.
+
+**The two measures disagree badly, and that is the important finding.** The regex
+counts event *vocabulary*, which recaps and attendee posts use as freely as
+announcements — so it reads ~25% almost everywhere and its ranking is close to
+useless:
+
+| Query | regex | Claude |
+|---|---|---|
+| sportstech Europe | 36.0% | 4.0% |
+| sport innovation Europe | 20.0% | 0.0% |
+| women in sport Ireland | 12.0% | **20.0%** |
+
+`women in sport Ireland` was cut on the proxy and restored one run later on the
+measure. A `_MIN_SAMPLE_FOR_CUT = 20` guard had already spared `sportstech Ireland`
+(regex 1/10 = 10%, actually 20%) — cutting on 10 observations would have been
+discarding an unmeasured query, not a weak one. Nine enabled rows now read below 15%
+on the Claude measure and are **marked but not cut**: that would be a new decision on
+one week at n~25, where 0.0% and 4.0% differ by a single post.
+
+**Geography is the strongest signal, and the only one with enough n to trust:**
+Ireland **21.2%** (29/137), UK **10.5%** (18/171), Europe **5.5%** (9/165). Dropping
+the Europe column is the single biggest available cut — a third of keyword spend for
+9 of 56 announcements — but "broad on purpose" was an explicit call, so it stays.
+
+**Seed authors beat keywords outright: 54.8% (23/42) vs 11.8% (56/473).** Growing the
+seed list is worth more than any amount of keyword tuning.
+
 **Seed queries carry no keyword filter.** Seed pages are curated organisers, so
 everything they post in the window is worth a look. Filtering them by keyword would
 re-introduce the exact blind spot this source exists to close — the Meath conference
 post does not contain the word "sportstech".
+
+**Classification (`lead_classifier.py`).** After the write, every *unclassified*
+pending lead is labelled by Haiku (`claude-haiku-4-5-20251001` — same model and same
+`messages.create` + strip-fence + `json.loads` idiom as `jobs_pipeline/classifier.py`,
+so the repo has one classifier pattern, not two). It writes `post_kind`
+(event_announcement | event_recap | attendee_post | generic_content | job_post |
+other), `is_event_relevant`, `relevance_confidence` (0-100), `rating_notes` (the
+model's one-line reason) and the raw response in `classification`.
+
+Three properties worth keeping:
+- **It labels, it never deletes,** and it never touches `status` — that column is the
+  human's. A classifier that dropped its own low scorers would hide its false
+  negatives, and false negatives are the exact failure this source exists to fix.
+- **`is_event_relevant` is derived from `post_kind` in `normalise()`, not taken on
+  trust,** so a model that returns the two fields inconsistently cannot put a recap
+  into the relevant queue.
+- **It means "is an event announcement", not "is an event we want".** An out-of-scope
+  conference scores relevant with a high confidence and a reason that says so. Scope
+  is Iddo's call at triage; `relevance_confidence` is confidence in the *label*.
+
+Idempotent by `classified_at IS NULL`, which is both the work queue and the guard: a
+lead is classified once ever, a re-run costs nothing, and a crashed run resumes rather
+than re-paying. Measured 2026-09-14: ~$0.00135/lead.
+
+Triage query:
+```sql
+select * from event_leads
+where status = 'pending' and is_event_relevant
+order by relevance_confidence desc;
+```
 
 **`event_leads`, not `events`.** Keyword-matched posts have a far higher
 false-positive rate than a structured listing page, so they get their own review
@@ -636,13 +699,16 @@ price change is picked up automatically. Both figures are written to the spend l
 (`usage_total_usd` derived, `usage_reported_usd` as-read) so a future divergence is
 visible rather than silent.
 
-**No cost ceiling — a knowing exception to the CLAUDE.md house rule.** Iddo's
-explicit call for v1: run it and see what it spends before deciding whether a
-ceiling belongs here. Standing in for one meanwhile: `MAX_POSTS_PER_QUERY` (25)
-caps every call actor-side, the query set is a fixed-length list rather than
-anything derived at runtime, and every call's real billed cost lands in
-`scripts/data/apify_spend.jsonl` — committed back by the workflow, since a runner's
-filesystem is discarded. Revisit once that log has a few Fridays in it.
+**No aborting cost ceiling — a knowing exception to the CLAUDE.md house rule.**
+Iddo's explicit call, reaffirmed 2026-09-14 after the first run came in under $1.
+Both budgets **warn and continue** instead of aborting: `APIFY_WARN_ABOVE_USD`
+($3.00, ~3x the first run) in `run_linkedin_leads.py`, and
+`lead_classifier.WARN_ABOVE_USD` ($1.00) for the Haiku step. What else bounds spend:
+`MAX_POSTS_PER_QUERY` (25) caps every actor call, the query set is a fixed-length
+table rather than anything derived at runtime, the classifier runs once per lead ever,
+and real billed cost from both vendors lands in `scripts/data/apify_spend.jsonl` and
+`scripts/data/anthropic_spend.jsonl` — committed back by the workflow, since a
+runner's filesystem is discarded. Revisit once those logs have a few Fridays in them.
 
 **LSP resolution is corroborated, never guessed.** The 29 Local Sports Partnerships
 come from Sport Ireland's own LSP Contact Finder. `resolve_lsp_linkedin.py` asks
@@ -654,6 +720,25 @@ resolves proves a page exists, not that it is *this* organisation's page.
 `partnership` is deliberately not a sport token — Ireland is full of county-level
 LEADER and local-development "partnerships", and including it let Kilkenny LEADER
 Partnership through as Kilkenny Recreation & Sports Partnership on the first run.
-It fails closed: of 29, **13 verified, 7 needs_manual_review, 9 not_found**. The 16
-non-verified are *not* in the seed CSV and must be confirmed by opening the page
-before being added.
+It fails closed. The first pass (single query per LSP) gave 13 verified, 7
+needs_manual_review, 9 not_found. A second pass on 2026-09-14 widened the *search*
+rather than the gate — `_search_variants()` tries up to 6 name forms per LSP, because
+Irish LSPs are inconsistently named ("Longford Sports" and "Tipperary Sports" drop
+"Partnership"; "Sports Active Wexford" inverts the order; several are listed as
+"<County> Local Sports Partnership" regardless of what Sport Ireland calls them).
+Result: **14 verified, 15 needs_manual_review, 0 not_found**. One net new seed:
+**Carlow -> `active-carlow`** (trades as Active Carlow; confirmed against
+carlowsports.ie). The 15 non-verified are *not* in the seed CSV and must be confirmed
+by opening the page.
+
+**The widened search also proved the token gate insufficient on its own, so there is
+now a second guard.** "Galway Sports Active" resolved to
+`atu-galway-department-of-sport-exercise-nutrition` — the title contains "galway" and
+"sport", so the gate passed, but that is ATU Galway's sport department, a university,
+and it was **already a curated seed under its own name**. `_load_claimed_urls()` now
+refuses any candidate already attributed to a different organisation: non-LSP seed
+rows, plus every LSP verified earlier in the same run. It deliberately ignores
+category=lsp seed rows, which are this script's own prior output — treating those as
+conflicts made the resolver fight itself, since Sport Ireland says "Cork Sports
+Partnership" and LinkedIn says "Cork Local Sports Partnership". LSP-vs-LSP collisions
+are still caught in-run.

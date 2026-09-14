@@ -6,6 +6,113 @@ Rolling log of changes and open issues. Most recent session first.
 
 ---
 
+## Session 2026-09-14 (third) — tuning the LinkedIn leads adapter: the proxy that ranked the queries was wrong
+
+### What shipped
+
+- **Keyword prune.** `KEYWORD_QUERIES` is now an explicit table carrying both measured
+  rates per query. 2 of 21 disabled; every run logs what it is not searching for.
+- **LSP resolver widened.** `_search_variants()` tries up to 6 name forms per LSP.
+  `_load_claimed_urls()` added as a second guard. 14 verified (was 13), 0 not_found.
+- **`lead_classifier.py`** — Haiku labelling for `event_leads`, same model and calling
+  idiom as `jobs_pipeline/classifier.py`. New columns via migration
+  `event_leads_classification`.
+- **`run_telemetry.py`** — third rate section (`RATE_HAIKU_*`, `record_anthropic_run`,
+  `anthropic_spend.jsonl`), kept separate from the Sonnet table the news breakers use.
+- **Warn-only spend thresholds**, no aborting ceiling: `APIFY_WARN_ABOVE_USD` $3.00,
+  `lead_classifier.WARN_ABOVE_USD` $1.00.
+- **`events_weekly.yml`** — `ANTHROPIC_API_KEY` added to the step; commit step now
+  covers both spend logs.
+
+### Run (2026-09-14, 14m 31s, 36 queries, 0 failed)
+
+| | |
+|---|---|
+| Posts fetched | 418 (377 keyword, 41 seed author) |
+| Unique leads | 330 — **19 new**, 311 re-seen |
+| Classified | 403 of 403 candidates, 0 failed |
+| Event announcements | **65**, of which **64 at confidence >= 70** |
+| Apify | **$0.7838** |
+| Anthropic | **$0.5710** |
+| **Total** | **$1.3548** |
+
+`post_kind` split: generic_content 210, event_announcement 65, event_recap 63,
+attendee_post 39, job_post 19, other 7.
+
+Acceptance test still holds: both Meath Women in Sport Conference posts classified
+`event_announcement` at 95 and 92, with reasons naming the date, venue and
+registration link. The third Meath post (a programme launch write-up) correctly
+`event_recap`.
+
+### The headline finding: the regex proxy's ranking was close to useless
+
+The prune was made on an event-language regex because that was the only measure
+available. The classifier then labelled the same 515 query-matches directly, and the
+two disagree badly:
+
+| Query | regex | Claude |
+|---|---|---|
+| sportstech Europe | 36.0% | 4.0% |
+| sport innovation Europe | 20.0% | 0.0% |
+| sports data Europe | 26.9% | 3.8% |
+| **women in sport Ireland** | **12.0%** | **20.0%** |
+
+The regex counts event *vocabulary*, and recaps and attendee posts use it as freely as
+announcements — which is why it reads ~25% almost everywhere and why 24% looked like a
+precision ceiling when it was mostly noise.
+
+**Acted on:** `women in sport Ireland` restored (cut at a proxy 12%, measured 20% — 5th
+of 21). The `_MIN_SAMPLE_FOR_CUT = 20` guard added during the prune had already spared
+`sportstech Ireland`, which the proxy put at 10% and the measure puts at 20%; cutting on
+10 observations would have discarded an unmeasured query, not a weak one.
+
+**Not acted on:** nine enabled queries now read below 15% on the Claude measure. Marked
+in the table, left enabled. Cutting them is a *new* decision on one week at n~25, where
+0.0% and 4.0% differ by one post — worth making after a second week, not this one.
+
+### Two structural findings worth more than any keyword tuning
+
+1. **Geography, where n is large enough to trust.** Ireland **21.2%** (29/137), UK
+   **10.5%** (18/171), Europe **5.5%** (9/165) — monotonic. Dropping the Europe column
+   is the single biggest available cut: a third of keyword spend for 9 of 56
+   announcements. Left in place because "Ireland + UK + Europe, broad on purpose" was an
+   explicit call — this is Iddo's to make, not a tuning decision.
+2. **Seed authors beat keywords 4.6x.** 54.8% (23/42) against 11.8% (56/473). The 15
+   unresolved LSPs and any other organiser pages are worth more than re-tuning keywords.
+
+### The LSP gate needed a second guard, and the widened search is what proved it
+
+Widening to 6 name variants took not_found from 9 to 0 — but only **one genuinely new
+seed: Carlow -> `active-carlow`** (trades as Active Carlow; confirmed against
+carlowsports.ie). The other 15 are candidates to click, not resolutions, and the
+not_found -> needs_manual_review shift is mostly cosmetic.
+
+More usefully, the widening exposed that the token gate is insufficient alone.
+**`Galway Sports Active` resolved to `atu-galway-department-of-sport-exercise-nutrition`** —
+"galway" + "sport" both present, gate passed — which is ATU Galway's *sport department*,
+a university, and was **already a curated seed under its own name**. `_load_claimed_urls()`
+now refuses any page already attributed to a different organisation. A first cut of that
+guard included the script's own prior LSP output and made the resolver fight itself
+(Sport Ireland: "Cork Sports Partnership"; LinkedIn: "Cork **Local** Sports Partnership"),
+so it is scoped to non-LSP seeds plus in-run collisions.
+
+### Open / next session
+
+- **Second week of classified data**, then re-prune the nine marked queries and decide
+  the Europe question from two measurements instead of one.
+- **15 LSPs still unresolved** — all now carry a candidate URL in
+  `lsp_linkedin_resolved.csv`. Confirm by opening the page; do not promote on the
+  candidate alone.
+- **`is_event_relevant` means "is an event announcement", not "is an event we want".**
+  A NYC family-office forum scored 92 with a reason saying it is neither sportstech nor
+  in-region. Scope is a triage judgement; consider a second scope field if that proves
+  tedious.
+- **Triage volume is now workable** — 65 announcements rather than 384 raw — but nothing
+  in sd3-intelligence-hub renders `event_leads` yet.
+- **Commit `3319eeb` and this one are still unpushed**, per Iddo's standing decision.
+
+---
+
 ## Session 2026-09-14 (second) — 6th event source: LinkedIn keyword + organiser-page lead discovery
 
 ### Why

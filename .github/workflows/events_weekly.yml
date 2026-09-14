@@ -50,26 +50,33 @@ jobs:
       # skip this one — they're independent sources sharing a cadence, not a
       # pipeline. `continue-on-error` for the mirror of that: a LinkedIn or Apify
       # outage must not mark the whole events run red.
+      # Discovery + the Haiku classification pass, in one process. The classifier
+      # runs against event_leads rather than against this run's results, so it
+      # also sweeps up anything an earlier run left unclassified.
       - name: Run LinkedIn event-lead discovery
         if: always()
         continue-on-error: true
         run: python events_pipeline/run_linkedin_leads.py
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      # There is no cost ceiling on the step above (Iddo's explicit call), so this
-      # log is the only record of what it actually spends. Committing it back is
-      # what makes that record survive the runner.
-      - name: Commit Apify spend telemetry
+      # Neither half of the step above has an aborting cost ceiling (Iddo's
+      # explicit call) — they warn and continue. These logs are therefore the only
+      # record of what it actually spends, on two separate budgets: Apify per-post
+      # events, and Anthropic tokens. Committing them back is what makes that
+      # record survive the runner's disposable filesystem.
+      - name: Commit spend telemetry
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase --autostash || true
           git add scripts/data/apify_spend.jsonl || true
-          git diff --staged --quiet || git commit -m "chore: apify spend telemetry $(date +%Y-%m-%d)"
+          git add scripts/data/anthropic_spend.jsonl || true
+          git diff --staged --quiet || git commit -m "chore: linkedin leads spend telemetry $(date +%Y-%m-%d)"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

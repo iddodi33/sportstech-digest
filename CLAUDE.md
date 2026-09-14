@@ -52,7 +52,8 @@ sportstech-digest/
     extractor.py                 HTML → Claude → structured event JSON
     run_weekly_events.py         Full weekly orchestrator (the 5 structured sources)
     adapters/                    5 event source adapters + linkedin_keywords.py (6th, separate path)
-    run_linkedin_leads.py        6th source entry point — LinkedIn keyword/seed-author leads
+    run_linkedin_leads.py        6th source entry point — LinkedIn keyword/seed-author leads + Haiku classification
+    lead_classifier.py           Haiku relevance labelling for event_leads (added 2026-09-14)
     resolve_lsp_linkedin.py      One-off: resolve the 29 LSPs to LinkedIn pages (Serper, corroborated)
     data/                        linkedin_seed_authors.csv (live seeds), lsp_linkedin_resolved.csv (proposals)
     weekly/                      runner, snapshot, email, sendgrid
@@ -82,21 +83,30 @@ sportstech-digest/
   (e.g. `scripts/audit_alerts_vs_hub.py`).
 - **One standing exception to the cost-ceiling rule, and only one.**
   `events_pipeline/run_linkedin_leads.py` (the LinkedIn event-lead step) runs
-  unattended on Friday cron with **no aborting cost ceiling**. That is Iddo's
-  explicit v1 call — run it, see what it spends, then decide. It is recorded here
-  so nobody "fixes" it by accident and nobody treats it as precedent. Standing in
-  for the ceiling: `MAX_POSTS_PER_QUERY` caps every actor call, the query list is
-  fixed-length rather than derived at runtime, and real billed spend per call goes
-  to `scripts/data/apify_spend.jsonl`. Revisit once that log has a few Fridays in
-  it. Every *other* unattended script still gets a real ceiling.
-- **Apify spend is metered separately from Anthropic spend, on purpose.**
-  `run_telemetry.py` has two independent halves: a per-MTok model rate table, and
-  an Apify per-event section writing `apify_spend.jsonl`. Do not merge them — the
-  "model bumps must update the rates" rule below would then fire on changes that
-  have nothing to do with Anthropic pricing. Apify costs come from the run
-  object's own event counts x its own event prices, never from hardcoded rates;
-  see `charged_cost_usd()` and the ARCHITECTURE.md note on why `usageTotalUsd`
-  alone under-reports.
+  unattended on Friday cron with **no aborting cost ceiling**, on both its Apify
+  and its Anthropic budget. That is Iddo's explicit call, reaffirmed 2026-09-14
+  after the first run came in under $1. It is recorded here so nobody "fixes" it
+  by accident and nobody treats it as precedent. What it has instead: **warn-only**
+  thresholds (`APIFY_WARN_ABOVE_USD` $3.00, `lead_classifier.WARN_ABOVE_USD`
+  $1.00) that log and continue, `MAX_POSTS_PER_QUERY` capping every actor call, a
+  fixed-length query table rather than anything derived at runtime, one classifier
+  call per lead *ever* (`classified_at` is the guard), and real billed spend in
+  `scripts/data/apify_spend.jsonl` + `scripts/data/anthropic_spend.jsonl`.
+  Every *other* unattended script still gets a real aborting ceiling.
+- **`run_telemetry.py` has three independent rate sections. Do not merge them.**
+  (1) the Sonnet per-MTok table at the top, which **both news pipelines'
+  `RUN_COST_CEILING_USD` are enforced against**; (2) `RATE_HAIKU_*` +
+  `record_anthropic_run()`, used by the events LinkedIn classifier, which is 3x
+  cheaper than Sonnet on both input and output — pricing Haiku tokens with
+  `cost_usd()` overstates them threefold and tempts someone into "fixing" the
+  shared constants and silently moving the news breakers; (3) the Apify per-event
+  section writing `apify_spend.jsonl`, which is vendor-event spend with no tokens
+  and no model. Apify costs come from the run object's own event counts x its own
+  event prices, never from hardcoded rates — see `charged_cost_usd()` and the
+  ARCHITECTURE.md note on why `usageTotalUsd` alone under-reports by ~2.7x.
+- **The events LinkedIn classifier and the jobs classifier share a model on
+  purpose.** Both are `claude-haiku-4-5-20251001`. If one moves, move both, and
+  update `RATE_HAIKU_*` in the same change.
 - **Model bumps must update `run_telemetry.py`'s rates in the same change.**
   `run_telemetry.py` hardcodes the current `MODEL`'s per-MTok rates, and **both pipelines'
   `RUN_COST_CEILING_USD` are enforced against them**. Bump the model without the rates and
@@ -236,8 +246,9 @@ python events_pipeline/test_extractor.py "<url>" --upsert
 
 # Events — LinkedIn leads (6th source; writes event_leads, not events)
 python events_pipeline/run_linkedin_leads.py --dry-run --limit 1   # one actor call, ~$0.05
-python events_pipeline/run_linkedin_leads.py --dry-run
-python events_pipeline/run_linkedin_leads.py
+python events_pipeline/run_linkedin_leads.py --dry-run             # NB: still bills Apify
+python events_pipeline/run_linkedin_leads.py --skip-classify       # discover only, no Haiku
+python events_pipeline/run_linkedin_leads.py                       # discover + classify
 python events_pipeline/resolve_lsp_linkedin.py                     # one-off LSP page resolution
 
 # Events — full weekly orchestrator
@@ -267,3 +278,4 @@ The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Py
 - PICKS_JSON contract between the Cowork Friday news-brief trigger and `weekly_cover.py` (final line of the Cockpit task notes: `PICKS_JSON: [{"company","slug","news_url"}]`)
 - `public.events` and the 5 structured event adapters — the LinkedIn event-lead source writes only to `public.event_leads`, and a lead reaches `events` only when a human promotes it
 - The seed list in `events_pipeline/data/linkedin_seed_authors.csv` is hand-reviewed. Never add a LinkedIn page to it from a slug guess or an uncorroborated resolver row
+- `event_leads.status` is the human's column — the Haiku classifier writes only the advisory fields beside it (`is_event_relevant`, `relevance_confidence`, `post_kind`, `rating_notes`) and never deletes or re-queues a lead

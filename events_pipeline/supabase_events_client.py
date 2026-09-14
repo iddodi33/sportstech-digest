@@ -334,3 +334,65 @@ def upsert_event_lead(lead: dict) -> tuple[str | None, bool]:
     except Exception as exc:
         log.error("upsert_event_lead failed for post %s: %s", post_id, exc)
         return None, False
+
+
+def fetch_unclassified_leads(limit: int | None = None) -> list[dict]:
+    """Pending leads that have never been classified, oldest post first.
+
+    `classified_at IS NULL` is the work queue and the idempotency guard in one:
+    a lead is classified once, ever, so re-running the step costs nothing and a
+    run that dies halfway resumes where it stopped rather than re-paying for
+    what it already did.
+
+    Restricted to status='pending' so a lead Iddo has already rejected or
+    promoted is never re-classified — his decision outranks the model's, and
+    paying Haiku to second-guess it would be worse than useless.
+    """
+    client = _get_client()
+    if client is None:
+        return []
+    try:
+        query = (
+            client.table("event_leads")
+            .select("id, content, author_name, author_type, posted_at, matched_all")
+            .is_("classified_at", "null")
+            .eq("status", "pending")
+            .order("posted_at", desc=False)
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        return query.execute().data or []
+    except Exception as exc:
+        log.error("fetch_unclassified_leads failed: %s", exc)
+        return []
+
+
+def update_lead_classification(lead_id: str, classification: dict) -> bool:
+    """Write one lead's classification. Never touches `status`.
+
+    `status` is the human's column. This step only ever populates the advisory
+    fields next to it, so a classification can never move a lead through the
+    review queue by itself.
+    """
+    client = _get_client()
+    if client is None or not lead_id:
+        return False
+    try:
+        result = (
+            client.table("event_leads")
+            .update({
+                "is_event_relevant":    classification["is_event_relevant"],
+                "relevance_confidence": classification["relevance_confidence"],
+                "post_kind":            classification["post_kind"],
+                "rating_notes":         classification["rating_notes"],
+                "classification":       classification["classification"],
+                "classifier_model":     classification["classifier_model"],
+                "classified_at":        datetime.now(timezone.utc).isoformat(),
+            })
+            .eq("id", lead_id)
+            .execute()
+        )
+        return bool(result.data)
+    except Exception as exc:
+        log.error("update_lead_classification failed for %s: %s", lead_id, exc)
+        return False

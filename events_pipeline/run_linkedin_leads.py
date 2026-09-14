@@ -12,15 +12,18 @@ Flags:
   --authors-only     skip the keyword searches
   --limit N          cap at N queries (cheap smoke test — N=1 is one actor call)
   --seed-authors P   override the seed author CSV path
+  --skip-classify    discover and write leads without running the Haiku classifier
 
 Exit codes:
   0  ran (possibly with some individual queries failed — see the summary)
   1  aborted before doing any work (missing APIFY_TOKEN, no Supabase)
 
-NOTE: there is no cost ceiling here, by Iddo's explicit decision — see the
-"NO COST CEILING" section of adapters/linkedin_keywords.py. Every run's real
-billed Apify spend is written to scripts/data/apify_spend.jsonl so that decision
-can be revisited from data.
+NOTE: there is no aborting cost ceiling here, by Iddo's explicit decision — see
+the "NO COST CEILING" section of adapters/linkedin_keywords.py. Both halves of
+the spend warn instead: APIFY_WARN_ABOVE_USD below, and
+lead_classifier.WARN_ABOVE_USD for the Haiku step. Crossing either logs and
+continues. Real billed spend goes to scripts/data/apify_spend.jsonl and
+scripts/data/anthropic_spend.jsonl so the decision can be revisited from data.
 """
 
 from __future__ import annotations
@@ -51,6 +54,17 @@ log = logging.getLogger(__name__)
 
 _PIPELINE = "events_linkedin_leads"
 
+# What counts as "high confidence" in the run summary. A reporting threshold
+# only — nothing is filtered or dropped on it; the column holds the raw 0-100.
+HIGH_CONFIDENCE_THRESHOLD = 70
+
+# Warn-only spend threshold for the Apify half of the run. There is still no
+# aborting ceiling — Iddo's standing call — but the first real run cost $0.9929
+# with an untuned query set, so roughly 3x that is a generous line past which
+# something has changed and nobody would otherwise notice. Crossing it logs a
+# warning and the run continues.
+APIFY_WARN_ABOVE_USD = 3.00
+
 
 def _fmt_runtime(seconds: float) -> str:
     m, s = divmod(int(seconds), 60)
@@ -74,12 +88,109 @@ def _print_dry_run(leads: list[dict]) -> None:
     print("=" * 78)
 
 
+def _classify_pending(run_ts: str, limit: int | None = None) -> dict:
+    """Classify every unclassified pending lead with Haiku. Never raises.
+
+    Returns a stats dict for the run summary. Failures are per-lead: a lead that
+    errors is simply left unclassified and picked up by the next run, because
+    `classified_at IS NULL` is the work queue.
+    """
+    import anthropic
+
+    from claude_budget import RunCost
+    from events_pipeline import lead_classifier
+    from events_pipeline.supabase_events_client import (
+        fetch_unclassified_leads,
+        update_lead_classification,
+    )
+    import run_telemetry
+
+    stats = {
+        "candidates": 0, "classified": 0, "failed": 0,
+        "relevant": 0, "high_confidence": 0,
+        "by_kind": {}, "input_tokens": 0, "output_tokens": 0,
+        "requests": 0, "cost_usd": 0.0,
+    }
+
+    leads = fetch_unclassified_leads(limit=limit)
+    stats["candidates"] = len(leads)
+    if not leads:
+        log.info("Classification: nothing unclassified — skipping")
+        return stats
+
+    log.info("=== Classifying %d leads with %s ===", len(leads), lead_classifier.MODEL)
+
+    ai = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    # RunCost is used here purely as a token accumulator and for
+    # call_claude_with_retry's retry behaviour. Its ceiling is NOT enforced —
+    # this pipeline warns rather than aborts (see lead_classifier's docstring) —
+    # and its .cost property must not be read, because that prices tokens at the
+    # news pipelines' Sonnet rates and this step runs on Haiku.
+    run_cost = RunCost(ceiling_usd=float("inf"), label="linkedin_lead_classify")
+
+    for lead in leads:
+        try:
+            raw, _ = lead_classifier.classify_with_haiku(lead, ai, run_cost)
+            result = lead_classifier.normalise(raw)
+        except Exception as exc:
+            log.warning("Classification failed for lead %s: %s", lead.get("id"), exc)
+            stats["failed"] += 1
+            continue
+
+        if not update_lead_classification(lead["id"], result):
+            stats["failed"] += 1
+            continue
+
+        stats["classified"] += 1
+        kind = result["post_kind"]
+        stats["by_kind"][kind] = stats["by_kind"].get(kind, 0) + 1
+        if result["is_event_relevant"]:
+            stats["relevant"] += 1
+            if result["relevance_confidence"] >= HIGH_CONFIDENCE_THRESHOLD:
+                stats["high_confidence"] += 1
+
+    stats["input_tokens"] = run_cost.input_tokens
+    stats["output_tokens"] = run_cost.output_tokens
+    stats["requests"] = run_cost.requests
+    stats["cost_usd"] = round(
+        run_telemetry.haiku_cost_usd(run_cost.input_tokens, run_cost.output_tokens), 6,
+    )
+
+    run_telemetry.record_anthropic_run(
+        _PIPELINE,
+        lead_classifier.MODEL,
+        step="classify_leads",
+        items=stats["classified"],
+        requests=run_cost.requests,
+        input_tokens=run_cost.input_tokens,
+        output_tokens=run_cost.output_tokens,
+        run_ts=run_ts,
+        extra={
+            "failed": stats["failed"],
+            "relevant": stats["relevant"],
+            "high_confidence": stats["high_confidence"],
+            "by_kind": stats["by_kind"],
+        },
+    )
+
+    if stats["cost_usd"] > lead_classifier.WARN_ABOVE_USD:
+        log.warning(
+            "Classification spend $%.4f exceeded the $%.2f warn threshold "
+            "(%d leads). Not an abort — check scripts/data/anthropic_spend.jsonl "
+            "for the trend before changing anything.",
+            stats["cost_usd"], lead_classifier.WARN_ABOVE_USD, stats["classified"],
+        )
+
+    return stats
+
+
 def main(
     dry_run: bool = False,
     keywords_only: bool = False,
     authors_only: bool = False,
     limit: int | None = None,
     seed_authors_path: str | None = None,
+    skip_classify: bool = False,
 ) -> int:
     wall_t0 = time.time()
     run_started_at = datetime.now(timezone.utc)
@@ -96,6 +207,13 @@ def main(
 
     if not os.getenv("APIFY_TOKEN"):
         log.error("APIFY_TOKEN is not set — cannot run LinkedIn lead discovery.")
+        return 1
+
+    if not dry_run and not skip_classify and not os.getenv("ANTHROPIC_API_KEY"):
+        log.error(
+            "ANTHROPIC_API_KEY is not set — cannot classify leads. "
+            "Re-run with --skip-classify to discover without classifying."
+        )
         return 1
 
     from events_pipeline.adapters.linkedin_keywords import (
@@ -177,6 +295,17 @@ def main(
             else:
                 updated += 1
 
+    # ── Classify ──────────────────────────────────────────────────────────────
+    # Runs after the write, against the table rather than against `leads`, so it
+    # also picks up anything an earlier run left unclassified (a crash, an API
+    # outage, or --skip-classify). Skipped entirely on a dry run: there is
+    # nothing in the table to classify and no lead ids to write back to.
+    classify_stats: dict = {}
+    if not dry_run and not skip_classify:
+        classify_stats = _classify_pending(run_ts)
+    elif skip_classify:
+        log.info("Skipping classification (--skip-classify)")
+
     # ── Summary ───────────────────────────────────────────────────────────────
     runtime = time.time() - wall_t0
     log.info("=== LinkedIn event-lead discovery complete (%s) ===", _fmt_runtime(runtime))
@@ -191,7 +320,27 @@ def main(
     else:
         log.info("  written              : %d new, %d re-seen, %d failed",
                  inserted, updated, failed)
+    if classify_stats.get("candidates"):
+        log.info("  classified           : %d of %d candidates (%d failed)",
+                 classify_stats["classified"], classify_stats["candidates"],
+                 classify_stats["failed"])
+        log.info("  event-relevant       : %d (%d at confidence >= %d)",
+                 classify_stats["relevant"], classify_stats["high_confidence"],
+                 HIGH_CONFIDENCE_THRESHOLD)
+        for kind, n in sorted(classify_stats["by_kind"].items(), key=lambda x: -x[1]):
+            log.info("      %-20s %d", kind, n)
     log.info("  apify billed         : $%.4f", audit["usage_total_usd"])
+    if audit["usage_total_usd"] > APIFY_WARN_ABOVE_USD:
+        log.warning(
+            "  Apify spend $%.4f exceeded the $%.2f warn threshold (%d posts over "
+            "%d queries). Not an abort — check scripts/data/apify_spend.jsonl for "
+            "which queries moved before changing anything.",
+            audit["usage_total_usd"], APIFY_WARN_ABOVE_USD,
+            audit["posts_fetched"], audit["queries_run"],
+        )
+    log.info("  anthropic billed     : $%.4f", classify_stats.get("cost_usd", 0.0))
+    log.info("  total billed         : $%.4f",
+             audit["usage_total_usd"] + classify_stats.get("cost_usd", 0.0))
     if audit["usage_unreported_queries"]:
         log.warning(
             "  %d queries returned no cost figure — the total above is a floor, not a total",
@@ -219,6 +368,8 @@ if __name__ == "__main__":
                         help="Cap at N queries (N=1 is a single actor call)")
     parser.add_argument("--seed-authors", default=None, metavar="PATH",
                         help="Override the seed author CSV path")
+    parser.add_argument("--skip-classify", action="store_true",
+                        help="Discover and write leads without running the Haiku classifier")
     args = parser.parse_args()
     sys.exit(main(
         dry_run=args.dry_run,
@@ -226,4 +377,5 @@ if __name__ == "__main__":
         authors_only=args.authors_only,
         limit=args.limit,
         seed_authors_path=args.seed_authors,
+        skip_classify=args.skip_classify,
     ))

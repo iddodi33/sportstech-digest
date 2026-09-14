@@ -51,7 +51,7 @@ Per-query calls also keep attribution unambiguous: the actor echoes the query
 back on each item as `query.search`, but only for keyword runs, and a batched
 authorUrls run gives no per-author breakdown at all. Since "which keyword is
 earning its cost" is the first question anyone will ask of this data, the calls
-stay split. Volume is low by design (7 keywords x 3 geographies + ~17 seeds).
+stay split. Volume is low by design (19 enabled keyword combinations + ~18 seeds).
 
 NO COST CEILING — this is deliberate and is a knowing exception
 ---------------------------------------------------------------
@@ -112,24 +112,105 @@ POSTED_LIMIT = os.getenv("LINKEDIN_LEADS_POSTED_LIMIT", "week")
 # almost certainly wedged rather than slow.
 _ACTOR_TIMEOUT_SECONDS = 300
 
-# Base keywords. Grounded in the hub's own verified events, not guessed cold.
-# Every one carries a sport qualifier: the existing adapters already over-scrape
+# Keyword x geography query table, pruned against the 2026-09-14 run.
+#
+# Grounded in the hub's own verified events, not guessed cold. Every keyword
+# carries a sport qualifier: the 5 structured adapters already over-scrape
 # generic AI/tech noise (64 of the hub's 149 rejected events are tagged
-# ai_tech_ireland_auto_reject), and an unqualified "AI" or "tech" keyword search
-# on LinkedIn would be strictly worse than that.
-KEYWORDS = [
-    "sportstech",
-    "sports technology",
-    "sport innovation",
-    "women in sport",
-    "sport and AI",
-    "sports data",
-    "sports analytics conference",
+# ai_tech_ireland_auto_reject), and an unqualified "AI" or "tech" LinkedIn
+# search would be strictly worse than that. Geography is broad on purpose —
+# Iddo's explicit call — which is what multiplies query count, and cost, by 3.
+#
+# This was a cartesian product of 7 keywords x 3 geographies until the first
+# real run gave 384 leads to measure against. It is now an explicit table so the
+# prune is auditable: `leads` and `hits` are what that run actually returned
+# (`hits` = matched _EVENT_LANGUAGE_RE, the crude proxy used to rank queries
+# before the Claude classifier existed), and `enabled=False` rows stay here with
+# their numbers rather than being deleted, so re-enabling one is a one-word edit.
+#
+# Two caveats a future reader needs, because the rates look more precise than
+# they are:
+#   - At n=25 the floor discriminates on a SINGLE post: 12% is 3/25 and 16% is
+#     4/25. Everything clustered 12-20% is inside the noise of this measurement.
+#   - 18 of the 21 queries hit MAX_POSTS_PER_QUERY, so their rate is measured on
+#     a date-truncated sample, not on everything LinkedIn had.
+# Re-derive this table from event_leads.is_event_relevant once the classifier has
+# a couple of weeks of data — that is a real precision measure, this was a proxy.
+_PRECISION_FLOOR_PCT = 15.0
+
+# A query is only cut on evidence we actually have. `sportstech Ireland` scored
+# 1/10 = 10%, below the floor — but 1/10 has a 95% CI of roughly 0.3-45%, so it
+# is not measurably below the floor, it is unmeasured; it is also the brand-core
+# term for an Irish sportstech business. Cutting a query for returning few posts
+# is the opposite of what the floor is for, which is cutting queries that return
+# many posts and few events.
+_MIN_SAMPLE_FOR_CUT = 20
+
+# (keyword, geography, enabled, regex_n, regex_hits, claude_n, claude_hits)
+#   regex_*  : 2026-09-14 first run, event-language regex proxy
+#   claude_* : 2026-09-14 second run, lead_classifier post_kind=event_announcement
+KEYWORD_QUERIES: list[tuple[str, str, bool, int, int, int, int]] = [
+    # keyword                       geo        on     regex     claude        regex% -> claude%
+    ("sports analytics conference", "Ireland", True,   2,  1,   2,  1),   #  50.0 ->  50.0  (n=2)
+    ("sports technology",           "Ireland", True,  25,  9,  25,  7),   #  36.0 ->  28.0
+    ("sport innovation",            "UK",      True,  25,  9,  27,  7),   #  36.0 ->  25.9
+    ("sport innovation",            "Ireland", True,  25, 12,  25,  6),   #  48.0 ->  24.0
+    ("women in sport",              "Ireland", True,  25,  3,  25,  5),   #  12.0 ->  20.0  RESTORED
+    ("sports analytics conference", "Europe",  True,  10,  3,  10,  2),   #  30.0 ->  20.0
+    ("sportstech",                  "Ireland", True,  10,  1,  10,  2),   #  10.0 ->  20.0  spared by n<20
+    ("sports analytics conference", "UK",      True,   6,  1,   6,  1),   #  16.7 ->  16.7  (n=6)
+    ("sports data",                 "Ireland", True,  25,  8,  25,  4),   #  32.0 ->  16.0
+    ("sport and AI",                "Ireland", True,  25,  8,  25,  4),   #  32.0 ->  16.0
+    # ── below the floor on the Claude measure; see the note after this table ──
+    ("women in sport",              "UK",      True,  25,  4,  27,  3),   #  16.0 ->  11.1
+    ("sport and AI",                "UK",      True,  25,  5,  28,  3),   #  20.0 ->  10.7
+    ("sports technology",           "Europe",  True,  25,  6,  26,  2),   #  24.0 ->   7.7
+    ("sports technology",           "UK",      True,  25,  6,  28,  2),   #  24.0 ->   7.1
+    ("sports data",                 "UK",      True,  25,  5,  30,  2),   #  20.0 ->   6.7
+    ("sportstech",                  "Europe",  True,  25,  9,  25,  1),   #  36.0 ->   4.0
+    ("women in sport",              "Europe",  True,  25,  4,  26,  1),   #  16.0 ->   3.8
+    ("sports data",                 "Europe",  True,  25,  7,  26,  1),   #  28.0 ->   3.8
+    ("sport innovation",            "Europe",  True,  25,  5,  27,  0),   #  20.0 ->   0.0
+    # ── disabled ──
+    ("sport and AI",                "Europe",  False, 25,  2,  25,  2),   #   8.0 ->   8.0  CUT
+    ("sportstech",                  "UK",      False, 25,  3,  25,  0),   #  12.0 ->   0.0  CUT
 ]
 
-# Geography qualifiers appended to each keyword. Broad on purpose — Iddo's
-# explicit call. Note this multiplies the query count (and the cost) by 3.
-GEOGRAPHIES = ["Ireland", "UK", "Europe"]
+# WHAT THE SECOND RUN CHANGED, and why only one row moved
+# -------------------------------------------------------
+# The prune above was made on the regex proxy because that was the only measure
+# available. The classifier then labelled the same 515 query-matches directly,
+# and the two measures agree badly — the proxy's ranking is close to useless:
+#   sportstech Europe     36.0% regex ->  4.0% Claude   (proxy said 3rd best)
+#   sport innovation Eur  20.0% regex ->  0.0% Claude
+#   women in sport IE     12.0% regex -> 20.0% Claude   (proxy said cut it)
+# The regex counts event VOCABULARY, which recaps and attendee posts use just as
+# freely as announcements. That is why it reads ~25% almost everywhere.
+#
+# Acted on: `women in sport Ireland` is RESTORED. The 15% floor is a precision
+# floor, and measured properly that query is at 20% — 5th of 21. Cutting it was
+# an artifact of the instrument, not a judgement about the query, and it is the
+# thematic family of the founding example besides.
+#
+# NOT acted on: nine enabled rows now read below 15% on the Claude measure. They
+# are left enabled and marked instead, because cutting them would be a NEW
+# decision made on one week at n~25 — where 0.0% and 4.0% differ by a single
+# post — rather than a correction to one already made. Decide after a second
+# week of classified data, when the same query has been measured twice.
+#
+# The strongest signal is not per-query at all, it is geography, where n is large
+# enough to trust: Ireland 21.2% (29/137), UK 10.5% (18/171), Europe 5.5%
+# (9/165). Dropping the Europe column entirely is the single biggest available
+# cut — it is a third of keyword spend for 9 of 56 announcements — but "broad on
+# purpose, Ireland + UK + Europe" was an explicit call, so that is Iddo's to make.
+#
+# Seed authors beat keywords outright on the real measure: 54.8% (23/42) against
+# 11.8% (56/473). Growing the seed list is worth more than any keyword tuning.
+
+# Historical note on `women in sport Ireland`: it was cut on the regex proxy at
+# 12% and restored one run later at 20% measured. Kept as a worked example of the
+# failure mode — a cheap proxy chosen to rank queries, applied at a threshold
+# fine enough that its error swamped its signal.
 
 # Transient-failure retry, same shape as jobs_pipeline/adapters/apify_linkedin.py.
 _RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
@@ -207,9 +288,35 @@ def charged_cost_usd(run: dict) -> float | None:
     return round(total, 6)
 
 
-def build_keyword_queries() -> list[str]:
-    """Cartesian product of KEYWORDS x GEOGRAPHIES, as LinkedIn search strings."""
-    return [f"{kw} {geo}" for kw in KEYWORDS for geo in GEOGRAPHIES]
+def _rate_pct(n: int, hits: int) -> float | None:
+    """Measured rate for a query, or None if it was never observed."""
+    return round(100.0 * hits / n, 1) if n else None
+
+
+def build_keyword_queries(log_pruned: bool = False) -> list[str]:
+    """Enabled keyword x geography combinations, as LinkedIn search strings.
+
+    With log_pruned=True, also logs every disabled combination and the measured
+    rate it was cut on, so a run's own output says what it is not searching for.
+    A silent prune is the kind that survives three months past being wrong.
+    """
+    if log_pruned:
+        pruned = [(kw, geo, c_n, c_hits)
+                  for kw, geo, enabled, _, _, c_n, c_hits in KEYWORD_QUERIES if not enabled]
+        for kw, geo, c_n, c_hits in pruned:
+            log.info(
+                "linkedin_keywords: query '%s %s' DISABLED — %s%% announcement rate "
+                "(%d/%d) on 2026-09-14, below the %.0f%% floor",
+                kw, geo, _rate_pct(c_n, c_hits), c_hits, c_n, _PRECISION_FLOOR_PCT,
+            )
+        if pruned:
+            log.info(
+                "linkedin_keywords: %d of %d keyword combinations disabled; "
+                "re-enable in KEYWORD_QUERIES",
+                len(pruned), len(KEYWORD_QUERIES),
+            )
+
+    return [f"{kw} {geo}" for kw, geo, enabled, *_ in KEYWORD_QUERIES if enabled]
 
 
 def load_seed_authors(path: Path | None = None) -> list[dict]:
@@ -665,7 +772,7 @@ class LinkedInKeywordsAdapter:
 
         queries: list[tuple[str, object]] = []
         if not authors_only:
-            queries += [("keyword", q) for q in build_keyword_queries()]
+            queries += [("keyword", q) for q in build_keyword_queries(log_pruned=True)]
         if not keywords_only:
             queries += [("seed_author", s) for s in load_seed_authors(self._seed_authors_path)]
 

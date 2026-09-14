@@ -7,6 +7,7 @@ without rewriting earlier records:
   scripts/data/regional_cap_drops.jsonl      items CAP_REGIONAL truncated
   scripts/data/regional_feed_stats.jsonl     per-feed outcome, including zeroes
   scripts/data/apify_spend.jsonl             real billed Apify $ per actor call
+  scripts/data/anthropic_spend.jsonl         token spend for non-news Claude steps
 
 Token counts come from `response.usage` on the Anthropic response object — the
 actual billed figures the API returns, not a token-counter estimate and not
@@ -250,4 +251,82 @@ def record_apify_run(
     if extra:
         record.update(extra)
     _append(APIFY_SPEND_LOG, record)
+    return record
+
+
+# ── Anthropic spend outside the news pipelines ────────────────────────────────
+#
+# The rate table at the top of this file is Sonnet's, and BOTH news pipelines'
+# RUN_COST_CEILING_USD are enforced against it — so `cost_usd()` must keep
+# meaning "priced at Sonnet rates" and nothing else may quietly reuse it for a
+# different model. The events LinkedIn classifier runs on Haiku, which is 3x
+# cheaper on input and 3x cheaper on output; pricing its tokens with cost_usd()
+# would overstate its spend threefold and, worse, would tempt someone to "fix"
+# the shared constants and move the news breakers by accident.
+#
+# Hence a second, separate rate pair. The CLAUDE.md rule still applies to both:
+# bump a model, update its rates in the same change.
+
+# claude-haiku-4-5-20251001 standard (non-batch) rates per claude.com/pricing.
+RATE_HAIKU_INPUT_PER_MTOK = 1.00
+RATE_HAIKU_OUTPUT_PER_MTOK = 5.00
+HAIKU_PRICING_VERIFIED_ON = "2026-09-14"
+
+ANTHROPIC_SPEND_LOG = _DATA_DIR / "anthropic_spend.jsonl"
+
+
+def haiku_cost_usd(input_tokens: int, output_tokens: int) -> float:
+    return (
+        input_tokens / 1_000_000 * RATE_HAIKU_INPUT_PER_MTOK
+        + output_tokens / 1_000_000 * RATE_HAIKU_OUTPUT_PER_MTOK
+    )
+
+
+def record_anthropic_run(
+    pipeline: str,
+    model: str,
+    *,
+    step: str = "",
+    items: int = 0,
+    requests: int = 0,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    rate_input_per_mtok: float = RATE_HAIKU_INPUT_PER_MTOK,
+    rate_output_per_mtok: float = RATE_HAIKU_OUTPUT_PER_MTOK,
+    pricing_verified_on: str = HAIKU_PRICING_VERIFIED_ON,
+    run_ts: str | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Append one per-run record of Anthropic spend for a non-news pipeline.
+
+    One row per run, not per call: this meters a bulk classification step where
+    the per-item figure that matters is the average, and 300+ rows per Friday
+    would bury the Apify and news records in the same directory.
+
+    Rates are parameters with Haiku defaults rather than hardcoded reads of the
+    module constants, so a caller on a different model prices itself correctly
+    instead of silently inheriting Haiku's table — and every record carries the
+    rates it was priced at, like the news records above.
+    """
+    record = {
+        "timestamp":            run_ts or _now(),
+        "pipeline":             pipeline,
+        "step":                 step,
+        "model":                model,
+        "items":                items,
+        "requests":             requests,
+        "input_tokens":         input_tokens,
+        "output_tokens":        output_tokens,
+        "cost_usd":             round(
+            input_tokens / 1_000_000 * rate_input_per_mtok
+            + output_tokens / 1_000_000 * rate_output_per_mtok,
+            6,
+        ),
+        "rate_input_per_mtok":  rate_input_per_mtok,
+        "rate_output_per_mtok": rate_output_per_mtok,
+        "pricing_verified_on":  pricing_verified_on,
+    }
+    if extra:
+        record.update(extra)
+    _append(ANTHROPIC_SPEND_LOG, record)
     return record

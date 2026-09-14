@@ -16,6 +16,11 @@ Friday. So this script never guesses slugs. It asks Serper (Google's index) whic
 LinkedIn company page ranks for the LSP's exact name, then corroborates the
 returned page title against the name before marking a row `verified`.
 
+Each LSP is searched under several name variants (see _search_variants) because
+Irish LSPs are inconsistently named; the corroboration gate applied to the
+results is identical for every variant. Widening the search is safe, widening
+the gate would not be.
+
 Corroboration is deliberately strict and fails closed:
   - the county/place token must appear in the LinkedIn page title, AND
   - a sport/partnership token must appear in the title.
@@ -68,38 +73,45 @@ _DEFAULT_OUT = Path(__file__).resolve().parent / "data" / "lsp_linkedin_resolved
 # moves, so it should stay well-behaved by default.
 _THROTTLE_SECONDS = 1.0
 
-# (place token used for corroboration, official name, Sport Ireland website)
+# (place token used for corroboration, official name, Sport Ireland website,
+#  stem used to build looser search variants — see _search_variants)
 # Read from the LSP Contact Finder on 2026-09-14.
-LSPS: list[tuple[str, str, str]] = [
-    ("carlow",      "Carlow Sports Partnership",                   "www.carlowsports.ie"),
-    ("cavan",       "Cavan Sports Partnership",                    "www.cavansportspartnership.ie"),
-    ("clare",       "Clare Sports Partnership",                    "www.claresports.ie"),
-    ("cork",        "Cork Sports Partnership",                     "www.corksports.ie"),
-    ("donegal",     "Donegal Sports Partnership",                  "www.activedonegal.com"),
-    ("dublin",      "Dublin City Sport & Wellbeing Partnership",   "www.dcswphub.ie"),
-    ("laoghaire",   "Dun Laoghaire Rathdown Sports Partnership",   "www.dlrsportspartnership.ie"),
-    ("fingal",      "Fingal Sports Partnership",                   "www.fingal.ie"),
-    ("galway",      "Galway Sports Active",                        "www.galwayactive.ie"),
-    ("kerry",       "Kerry Recreation and Sports Partnership",     "(Facebook only)"),
-    ("kildare",     "Kildare Sports Partnership",                  "kildarecoco.ie/kildaresp/"),
-    ("kilkenny",    "Kilkenny Recreation & Sports Partnership",    "www.krsp.ie"),
-    ("laois",       "Laois Sports Partnership",                    "www.laoissports.ie"),
-    ("leitrim",     "Leitrim Sports Partnership",                  "www.leitrimsports.ie"),
-    ("limerick",    "Limerick Sports Partnership",                 "www.limericksports.ie"),
-    ("longford",    "Longford Sports",                             "www.longfordsports.ie"),
-    ("louth",       "Louth Sports Partnership",                    "www.louthlsp.com"),
-    ("mayo",        "Mayo Sports Partnership",                     "www.mayosports.ie"),
-    ("meath",       "Meath Local Sports Partnership",              "www.meathsports.ie"),
-    ("monaghan",    "Monaghan Sports Partnership",                 "www.monaghansports.ie"),
-    ("offaly",      "Offaly Sports Partnership",                   "www.offalysports.ie"),
-    ("roscommon",   "Roscommon Sports Partnership",                "www.rosactive.org"),
-    ("sligo",       "Sligo Sport & Recreation Partnership",        "www.sligosportandrecreation.ie"),
-    ("dublin",      "South Dublin County Sports Partnership",      "www.sdcsp.ie"),
-    ("tipperary",   "Tipperary Sports",                            "www.tipperarysports.ie"),
-    ("waterford",   "Waterford Sports Partnership",                "www.waterfordsportspartnership.ie"),
-    ("westmeath",   "Westmeath Sports Partnership",                "www.westmeathsports.ie"),
-    ("wexford",     "Sports Active Wexford",                       "www.sportsactivewexford.ie"),
-    ("wicklow",     "Wicklow Local Sports Partnership",            "www.wicklowlsp.ie"),
+#
+# `place` and `stem` differ where the official name is not "<County> Sports
+# Partnership": `place` is the single token that must appear in a LinkedIn page
+# title for the corroboration gate to pass, while `stem` is the human name the
+# organisation is likely to be *listed under*, which for Dún Laoghaire-Rathdown
+# and the two Dublins is more than one word.
+LSPS: list[tuple[str, str, str, str]] = [
+    ("carlow",      "Carlow Sports Partnership",                 "www.carlowsports.ie",                 "Carlow"),
+    ("cavan",       "Cavan Sports Partnership",                  "www.cavansportspartnership.ie",       "Cavan"),
+    ("clare",       "Clare Sports Partnership",                  "www.claresports.ie",                  "Clare"),
+    ("cork",        "Cork Sports Partnership",                   "www.corksports.ie",                   "Cork"),
+    ("donegal",     "Donegal Sports Partnership",                "www.activedonegal.com",               "Donegal"),
+    ("dublin",      "Dublin City Sport & Wellbeing Partnership", "www.dcswphub.ie",                     "Dublin City"),
+    ("laoghaire",   "Dun Laoghaire Rathdown Sports Partnership", "www.dlrsportspartnership.ie",         "Dun Laoghaire Rathdown"),
+    ("fingal",      "Fingal Sports Partnership",                 "www.fingal.ie",                       "Fingal"),
+    ("galway",      "Galway Sports Active",                      "www.galwayactive.ie",                 "Galway"),
+    ("kerry",       "Kerry Recreation and Sports Partnership",   "(Facebook only)",                     "Kerry"),
+    ("kildare",     "Kildare Sports Partnership",                "kildarecoco.ie/kildaresp/",           "Kildare"),
+    ("kilkenny",    "Kilkenny Recreation & Sports Partnership",  "www.krsp.ie",                         "Kilkenny"),
+    ("laois",       "Laois Sports Partnership",                  "www.laoissports.ie",                  "Laois"),
+    ("leitrim",     "Leitrim Sports Partnership",                "www.leitrimsports.ie",                "Leitrim"),
+    ("limerick",    "Limerick Sports Partnership",               "www.limericksports.ie",               "Limerick"),
+    ("longford",    "Longford Sports",                           "www.longfordsports.ie",               "Longford"),
+    ("louth",       "Louth Sports Partnership",                  "www.louthlsp.com",                    "Louth"),
+    ("mayo",        "Mayo Sports Partnership",                   "www.mayosports.ie",                   "Mayo"),
+    ("meath",       "Meath Local Sports Partnership",            "www.meathsports.ie",                  "Meath"),
+    ("monaghan",    "Monaghan Sports Partnership",               "www.monaghansports.ie",               "Monaghan"),
+    ("offaly",      "Offaly Sports Partnership",                 "www.offalysports.ie",                 "Offaly"),
+    ("roscommon",   "Roscommon Sports Partnership",              "www.rosactive.org",                   "Roscommon"),
+    ("sligo",       "Sligo Sport & Recreation Partnership",      "www.sligosportandrecreation.ie",      "Sligo"),
+    ("dublin",      "South Dublin County Sports Partnership",    "www.sdcsp.ie",                        "South Dublin"),
+    ("tipperary",   "Tipperary Sports",                          "www.tipperarysports.ie",              "Tipperary"),
+    ("waterford",   "Waterford Sports Partnership",              "www.waterfordsportspartnership.ie",   "Waterford"),
+    ("westmeath",   "Westmeath Sports Partnership",              "www.westmeathsports.ie",              "Westmeath"),
+    ("wexford",     "Sports Active Wexford",                     "www.sportsactivewexford.ie",          "Wexford"),
+    ("wicklow",     "Wicklow Local Sports Partnership",          "www.wicklowlsp.ie",                   "Wicklow"),
 ]
 
 # At least one of these must appear in the LinkedIn page title for a row to pass.
@@ -177,8 +189,67 @@ def _serper_search(query: str, api_key: str) -> list[dict]:
         raise SerperError(f"invalid JSON: {exc}") from exc
 
 
-def resolve_one(place: str, name: str, api_key: str) -> dict:
-    """Resolve one LSP to a LinkedIn company page, with a corroboration verdict."""
+def _search_variants(name: str, stem: str) -> list[str]:
+    """Search queries to try for one LSP, most specific first.
+
+    The first pass of this script (2026-09-14) used the official name alone and
+    left 9 of 29 as not_found. The gate was not the problem — it is what caught
+    Kilkenny LEADER Partnership — the *query* was. Irish LSPs are inconsistently
+    named: "Longford Sports" and "Tipperary Sports" drop "Partnership" entirely,
+    "Sports Active Wexford" inverts the word order, and several are listed on
+    LinkedIn as "<County> Local Sports Partnership" or "<County> Sports &
+    Recreation Partnership" regardless of what Sport Ireland calls them (Wicklow
+    resolved to wicklow-sports-recreation-partnership, Louth to
+    louth-local-sports-partnership). So widen the net, not the gate: every
+    candidate these variants surface still has to pass the same
+    place-token + sport-token check before it can be marked verified.
+
+    Deduped, order preserved — several LSPs' official name IS one of the
+    variants, and re-querying it would just spend a Serper call to get the same
+    answer twice.
+    """
+    variants = [
+        f'site:linkedin.com/company "{name}"',
+        f'site:linkedin.com/company "{stem} Local Sports Partnership"',
+        f'site:linkedin.com/company "{stem} Sports Partnership"',
+        f'site:linkedin.com/company "{stem} Sports & Recreation Partnership"',
+        f'site:linkedin.com/company "{stem} Sport & Recreation Partnership"',
+        # Unquoted last: loosest, most likely to surface an unrelated org, and
+        # therefore most reliant on the gate to reject it.
+        f"site:linkedin.com/company {stem} sports partnership Ireland",
+    ]
+    seen: set[str] = set()
+    return [v for v in variants if not (v in seen or seen.add(v))]  # type: ignore[func-returns-value]
+
+
+def resolve_one(
+    place: str,
+    name: str,
+    stem: str,
+    api_key: str,
+    claimed_urls: dict[str, str] | None = None,
+) -> dict:
+    """Resolve one LSP to a LinkedIn company page, with a corroboration verdict.
+
+    Tries each search variant in turn and stops at the first result that passes
+    BOTH the corroboration gate and the already-claimed check. If none does,
+    reports the best candidate seen across all variants so a human has something
+    to click, marked needs_manual_review.
+
+    `claimed_urls` maps a LinkedIn company URL to the organisation already using
+    it — the curated seeds plus every LSP resolved earlier in this run. One
+    LinkedIn page cannot be two different organisations, so a candidate that is
+    already spoken for is refused rather than verified.
+
+    This guard exists because the token gate alone is not sufficient, and the
+    widened variant search made that visible. On 2026-09-14 "Galway Sports
+    Active" resolved to atu-galway-department-of-sport-exercise-nutrition: the
+    title contains "galway" and "sport", so the gate passed — but that is ATU
+    Galway's sport department, a university, and it was already a curated seed
+    under its own name. The gate can only tell you the tokens match, never that
+    the organisation does; this catches the subset where we can prove it doesn't.
+    """
+    claimed_urls = claimed_urls or {}
     row = {
         "lsp_name": name,
         "website": "",
@@ -188,45 +259,107 @@ def resolve_one(place: str, name: str, api_key: str) -> dict:
         "notes": "",
     }
 
-    results = _serper_search(f'site:linkedin.com/company "{name}"', api_key)
-
     place_norm = _normalise(place)
-    first_candidate: tuple[str, str] | None = None
+    first_candidate: tuple[str, str, str] | None = None
+    variants = _search_variants(name, stem)
 
-    for result in results:
-        url = _company_url(result.get("link", ""))
-        if not url:
-            continue
-        title = (result.get("title") or "").strip()
-        title_norm = _normalise(title)
+    for variant in variants:
+        results = _serper_search(variant, api_key)
 
-        if first_candidate is None:
-            first_candidate = (url, title)
+        for result in results:
+            url = _company_url(result.get("link", ""))
+            if not url:
+                continue
+            title = (result.get("title") or "").strip()
+            title_norm = _normalise(title)
 
-        if place_norm in title_norm and any(t in title_norm for t in _SPORT_TOKENS):
-            row.update({
-                "linkedin_url": url,
-                "result_title": title,
-                "verdict": "verified",
-                "notes": f"title contains '{place}' + a sport token",
-            })
-            return row
+            if first_candidate is None:
+                first_candidate = (url, title, variant)
+
+            if place_norm in title_norm and any(t in title_norm for t in _SPORT_TOKENS):
+                owner = claimed_urls.get(url)
+                if owner and _normalise(owner) != _normalise(name):
+                    row.update({
+                        "linkedin_url": url,
+                        "result_title": title,
+                        "verdict": "needs_manual_review",
+                        "notes": (
+                            f"token gate passed but this page is already "
+                            f"{owner!r} — one LinkedIn page is not two organisations"
+                        ),
+                    })
+                    return row
+
+                row.update({
+                    "linkedin_url": url,
+                    "result_title": title,
+                    "verdict": "verified",
+                    "notes": (
+                        f"title contains '{place}' + a sport token; "
+                        f"matched on variant {variants.index(variant) + 1}/{len(variants)}"
+                    ),
+                })
+                return row
+
+        if variant is not variants[-1]:
+            time.sleep(_THROTTLE_SECONDS)
 
     if first_candidate is not None:
-        url, title = first_candidate
+        url, title, variant = first_candidate
         row.update({
             "linkedin_url": url,
             "result_title": title,
             "verdict": "needs_manual_review",
             "notes": (
-                f"top LinkedIn company result did not corroborate "
-                f"(expected '{place}' + a sport token in the title)"
+                f"no result across {len(variants)} query variants corroborated "
+                f"(expected '{place}' + a sport token in the title); "
+                f"best candidate from: {variant}"
             ),
         })
     else:
-        row["notes"] = "no linkedin.com/company result returned by Serper"
+        row["notes"] = (
+            f"no linkedin.com/company result from any of {len(variants)} query variants"
+        )
 
     return row
+
+
+_SEED_CSV = Path(__file__).resolve().parent / "data" / "linkedin_seed_authors.csv"
+
+
+def _load_claimed_urls() -> dict[str, str]:
+    """Map NON-LSP seed pages to the organisation they are filed under.
+
+    Deliberately skips category=lsp rows. Those rows are this script's own prior
+    output, so treating them as conflicts makes the resolver fight its results
+    from last run: Sport Ireland calls it "Cork Sports Partnership" and LinkedIn
+    calls it "Cork Local Sports Partnership", and comparing those two strings
+    says "different organisation" when it plainly is not. LSP-versus-LSP
+    collisions are caught anyway, because every LSP verified earlier in the
+    current run is added to this map as it resolves.
+
+    What is left is the case the guard is actually for: a page already known to
+    belong to an organisation of a different kind — a university department, an
+    agency, a conference — which no amount of county-plus-sport token matching
+    can distinguish from the county's LSP.
+
+    Read regardless of the row's `enabled` flag: a page parked as enabled=false
+    is still that organisation's page.
+    """
+    if not _SEED_CSV.exists():
+        return {}
+    try:
+        with open(_SEED_CSV, encoding="utf-8-sig", newline="") as f:
+            lines = [ln for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
+        return {
+            (row.get("linkedin_url") or "").strip(): (row.get("name") or "").strip()
+            for row in csv.DictReader(lines)
+            if (row.get("linkedin_url") or "").strip()
+            and (row.get("category") or "").strip().lower() != "lsp"
+        }
+    except Exception as exc:
+        log.warning("Could not read seed CSV %s: %s", _SEED_CSV, exc)
+        return {}
 
 
 def main(only: str | None, out_path: Path) -> int:
@@ -243,15 +376,23 @@ def main(only: str | None, out_path: Path) -> int:
             log.error("--only %r matched none of the %d LSPs", only, len(LSPS))
             return 1
 
+    # Pages already spoken for: the curated seeds the adapter actually reads,
+    # plus each LSP resolved earlier in this run. See resolve_one's docstring.
+    claimed_urls = _load_claimed_urls()
+    if claimed_urls:
+        log.info("Loaded %d already-claimed LinkedIn pages from the seed CSV", len(claimed_urls))
+
     rows: list[dict] = []
-    for i, (place, name, website) in enumerate(targets, start=1):
+    for i, (place, name, website, stem) in enumerate(targets, start=1):
         log.info("[%d/%d] resolving %s", i, len(targets), name)
         try:
-            row = resolve_one(place, name, api_key)
+            row = resolve_one(place, name, stem, api_key, claimed_urls)
         except SerperError as exc:
             log.error("Serper failed on %r: %s — aborting", name, exc)
             return 1
         row["website"] = website
+        if row["verdict"] == "verified" and row["linkedin_url"]:
+            claimed_urls[row["linkedin_url"]] = name
         rows.append(row)
         log.info("  -> %s %s", row["verdict"], row["linkedin_url"] or "(no url)")
         if i < len(targets):
