@@ -88,6 +88,22 @@ def row_to_record(row: dict) -> dict:
     platform = row["ats_platform"]
     endpoint = row.get("ats_api_endpoint") or None
 
+    needs_review = row.get("needs_manual_review") == "true"
+
+    # An ATS row flagged for review is an UNCORROBORATED slug guess: the slug
+    # matched a live board, but the company's own site never referenced it, so
+    # it may be a different company's board entirely. Importing it active puts
+    # misattributed jobs in the hub on the very next scrape - which is exactly
+    # what "onezero" (oneZero Financial Systems' BambooHR board) did on
+    # 2026-09-14, and "ea" did on 2026-05-28. Import it inactive and let a
+    # human flip is_active after checking the board.
+    #
+    # none_found / custom_html rows are NOT gated: none_found must stay active
+    # to reach the weekly Serper LinkedIn sweep, and custom_html points at the
+    # company's own domain so it cannot collide with another company's board.
+    real_ats = platform not in ("none_found", "custom_html")
+    is_active = not (needs_review and real_ats)
+
     record = {
         "company_id": row["company_id"],
         "careers_url": row.get("careers_url") or None,
@@ -95,8 +111,9 @@ def row_to_record(row: dict) -> dict:
         "ats_api_endpoint": endpoint,
         "ats_slug": extract_slug(row),
         "scrapability": row["scrapability"],
-        "is_active": True,
+        "is_active": is_active,
         "confidence": row.get("confidence") or None,
+        "needs_manual_review": needs_review,
         "discovered_at": parse_ts(row.get("discovered_at", "")),
         "last_verified_at": parse_ts(row.get("discovered_at", "")),
         "notes": row.get("notes") or None,
@@ -152,6 +169,13 @@ def main():
         print(f"Inserted batch {i // batch_size + 1}: {len(resp.data)} rows")
 
     print(f"\nDone. Inserted {inserted} rows.")
+
+    gated = [r for r in records if not r["is_active"]]
+    if gated:
+        print(f"!! {len(gated)} ATS row(s) imported INACTIVE pending manual review:")
+        for r in gated:
+            print(f"   {r['ats_platform']:16} {r['careers_url']}  -- {r['notes']}")
+        print("   Confirm each board is the right company, then set is_active=true.")
 
     # Summary
     from collections import Counter

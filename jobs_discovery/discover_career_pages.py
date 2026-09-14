@@ -31,6 +31,24 @@ USER_AGENT = (
 TIMEOUT = aiohttp.ClientTimeout(total=15)
 CONCURRENCY = 10
 
+# A User-Agent alone is not enough: Cloudflare-fronted sites 403 a request
+# carrying no Accept/Accept-Language, so probes came back as "no careers page"
+# for sites that serve one perfectly well to a browser (kitmanlabs.com did
+# exactly this, 403 to aiohttp and 200 to requests). Send a browser-shaped
+# header set instead.
+BROWSER_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-IE,en-GB;q=0.9,en;q=0.8",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 CAREERS_PATHS = [
     "/careers", "/careers/", "/jobs", "/jobs/",
     "/join-us", "/work-with-us",
@@ -243,21 +261,84 @@ async def phase1(session, name, website, log_fh):
     return None
 
 
-async def fetch_page(session: aiohttp.ClientSession, url: str, log_fh) -> tuple[int, str]:
-    """Fetch a URL, return (status, html_text). Returns (0, '') on error."""
+async def fetch_page(session: aiohttp.ClientSession, url: str, log_fh) -> tuple[int, str, str]:
+    """Fetch a URL, return (status, html_text, final_url). (0, '', '') on error."""
     try:
         async with session.get(url, allow_redirects=True) as resp:
-            log_fh.write(f"PAGE {url} -> {resp.status}\n")
+            final_url = str(resp.url)
+            log_fh.write(f"PAGE {url} -> {resp.status} (final {final_url})\n")
             if resp.status == 200:
                 text = await resp.text(errors="replace")
-                return resp.status, text
-            return resp.status, ""
+                return resp.status, text, final_url
+            return resp.status, "", final_url
     except asyncio.TimeoutError:
         log_fh.write(f"PAGE {url} -> TIMEOUT\n")
-        return 0, ""
+        return 0, "", ""
     except Exception as e:
         log_fh.write(f"PAGE {url} -> ERROR {e}\n")
-        return 0, ""
+        return 0, "", ""
+
+
+# Markers that a 200 response is really a "not found" / placeholder page.
+# Many small-business sites (Wix, Squarespace, Webflow, custom SPAs) answer
+# 200 for every path, so HTTP status alone cannot be trusted.
+SOFT_404_MARKERS = [
+    "page not found", "page doesn’t exist", "page doesn't exist",
+    "page does not exist", "no data found", "404 error", "error 404",
+    "coming soon", "under construction", "nothing here",
+]
+
+# A URL still looks like a careers destination if it keeps a careers-ish
+# segment. Redirecting /careers -> / means the path does not exist.
+CAREERS_URL_HINTS = ("career", "job", "join", "hiring", "vacanc", "opportunit", "work-with")
+
+# Signals that a page actually lists roles, not just "email us your CV".
+JOB_LISTING_MARKERS = [
+    "apply now", "apply for", "open position", "open role", "current opening",
+    "current vacanc", "vacancies", "job title", "view job", "view role",
+    "we're hiring", "we are hiring", "join our team", "browse jobs",
+    "full-time", "part-time", "permanent", "fixed term",
+]
+
+
+def _visible_text(html: str) -> str:
+    """Return collapsed visible text for a page, scripts/styles removed."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return " ".join(soup.get_text(" ", strip=True).split())
+
+
+def is_real_careers_page(final_url: str, html: str) -> tuple[bool, str]:
+    """Decide whether a 200 response is genuinely a careers page.
+
+    Returns (ok, reason). Guards against the three ways a 200 lies:
+      - redirect drift  (/careers 302s to the homepage)
+      - soft 404        (200 body that says "page not found")
+      - empty JS shell  (SPA that renders listings client-side)
+
+    Without these checks every 200 became a `custom_html` row pointing at
+    junk; a 2026-09-14 audit found 12 of 12 such rows were false positives.
+    """
+    if final_url and not any(h in final_url.lower() for h in CAREERS_URL_HINTS):
+        return False, f"redirect drift to {final_url}"
+
+    text = _visible_text(html)
+    low = text.lower()
+
+    if len(text) < 200:
+        return False, f"empty/JS-rendered shell ({len(text)} chars of text)"
+
+    head = low[:2000]
+    for marker in SOFT_404_MARKERS:
+        if marker in head:
+            return False, f"soft 404 ({marker!r})"
+
+    hits = sum(1 for m in JOB_LISTING_MARKERS if m in low)
+    if hits < 2:
+        return False, f"no job-listing signal ({hits} marker(s))"
+
+    return True, f"{hits} job-listing markers"
 
 
 async def phase2(session, website, log_fh):
@@ -266,17 +347,28 @@ async def phase2(session, website, log_fh):
     Returns (careers_url, html, ats_hint_platform) or (None, '', None).
     """
     base = website.rstrip("/")
+
     for path in CAREERS_PATHS:
         url = base + path
-        status, html = await fetch_page(session, url, log_fh)
-        if status == 200 and html:
-            # Check for ATS fingerprints
-            for platform, markers in ATS_FINGERPRINTS:
-                for marker in markers:
-                    if marker in html:
-                        return url, html, platform
-            # No ATS fingerprint but page exists — may be custom HTML
-            return url, html, None
+        status, html, final_url = await fetch_page(session, url, log_fh)
+        if status != 200 or not html:
+            continue
+
+        # ATS fingerprints are trusted on sight: an embed marker for a real
+        # ATS is strong evidence even on an otherwise sparse page.
+        for platform, markers in ATS_FINGERPRINTS:
+            for marker in markers:
+                if marker in html:
+                    return final_url or url, html, platform
+
+        # No ATS marker: a 200 alone proves nothing, so validate the body.
+        ok, reason = is_real_careers_page(final_url, html)
+        log_fh.write(f"VALIDATE {url} -> {'OK' if ok else 'REJECT'} ({reason})\n")
+        if ok:
+            return final_url or url, html, None
+
+    # Every candidate failed validation. Keep looking for an ATS marker on the
+    # remaining paths rather than returning the first 200 we happened to see.
     return None, "", None
 
 
@@ -295,9 +387,52 @@ def classify_html_page(html: str) -> tuple[str, str]:
     score = sum(1 for kw in job_indicators if kw in text)
     if score >= 3:
         return "medium", "Custom HTML with structured job listings"
-    elif score >= 1:
-        return "hard", "Careers page exists but limited structure"
-    return "hard", "Careers page found but no clear job listings"
+    return "hard", f"Careers page with limited structure ({score} indicator(s))"
+
+
+async def _corroborate_ats(
+    session: aiohttp.ClientSession,
+    website: str,
+    platform: str,
+    slug: str,
+    log_fh,
+) -> bool:
+    """Check the company's own site actually references this ATS board.
+
+    A phase-1 hit only proves the slug names *a* live board somewhere, not
+    that it is *this* company's. The company linking to it from its own
+    domain is the evidence that ties the two together.
+
+    Returns True when the slug or the platform's domain appears in the HTML
+    of the company's homepage or one of its careers paths. Returns False when
+    the site is unreachable -- unreachable means unverified, not verified.
+    """
+    if not website:
+        return False
+
+    base = website.rstrip("/")
+    needles = [f"{slug.lower()}"]
+    platform_domain = {
+        "greenhouse": "greenhouse.io", "lever": "lever.co",
+        "workable": "workable.com", "ashby": "ashbyhq.com",
+        "teamtailor": "teamtailor.com", "smartrecruiters": "smartrecruiters.com",
+        "bamboohr": "bamboohr.com", "personio": "personio.",
+        "recruitee": "recruitee.com", "breezy": "breezy.hr",
+    }.get(platform)
+
+    for path in ["", "/careers", "/careers/", "/jobs", "/join-us", "/about/careers"]:
+        status, html, _ = await fetch_page(session, base + path, log_fh)
+        if status != 200 or not html:
+            continue
+        low = html.lower()
+        # Require the slug AND the platform domain together: the slug alone is
+        # often just the company name repeated all over its own homepage.
+        if platform_domain and platform_domain in low and any(n in low for n in needles):
+            log_fh.write(f"CORROBORATE {website} -> OK ({platform}/{slug} on {path or '/'})\n")
+            return True
+
+    log_fh.write(f"CORROBORATE {website} -> FAIL ({platform}/{slug} not referenced)\n")
+    return False
 
 
 async def discover_company(
@@ -341,17 +476,34 @@ async def discover_company(
         hit = await phase1(session, name, website, log_fh)
         if hit:
             platform, api_ep, slug = hit
+            # A slug guessed from the company name or domain can land on a
+            # DIFFERENT company's board -- "onezero" matched oneZero Financial
+            # Systems' BambooHR board on 2026-09-14 and produced 10
+            # misattributed jobs before it was caught (same failure as the
+            # 2026-05-28 EA Sports "ea" slug). So corroborate the hit against
+            # the company's own site before trusting it.
+            corroborated = await _corroborate_ats(
+                session, website, platform, slug, log_fh
+            )
             result = {
                 **base_result,
                 "ats_platform": platform,
                 "ats_api_endpoint": api_ep,
                 "careers_url": careers_url_from_ats(platform, slug),
                 "scrapability": "easy",
-                "confidence": "high",
-                "needs_manual_review": "false",
-                "notes": "",
+                "confidence": "high" if corroborated else "medium",
+                "needs_manual_review": "false" if corroborated else "true",
+                "notes": "" if corroborated else (
+                    f"UNCORROBORATED: slug '{slug}' matched a live {platform} "
+                    f"board, but {website or 'the company site'} does not "
+                    f"reference it. Could belong to a different company -- "
+                    f"confirm before activating."
+                ),
             }
-            print(f"OK {name}: {platform} (high confidence)")
+            if corroborated:
+                print(f"OK {name}: {platform} (high confidence)")
+            else:
+                print(f"?? {name}: {platform} UNCORROBORATED (needs review)")
             return result
 
         # Phase 2: Website careers page discovery
@@ -427,7 +579,7 @@ async def main():
     sem = asyncio.Semaphore(CONCURRENCY)
 
     connector = aiohttp.TCPConnector(ssl=False)
-    headers = {"User-Agent": USER_AGENT}
+    headers = BROWSER_HEADERS
 
     with open(PROBE_LOG, "w", encoding="utf-8") as log_fh:
         log_fh.write(f"Probe run started {datetime.now(timezone.utc).isoformat()}\n")

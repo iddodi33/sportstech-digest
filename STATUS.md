@@ -1,8 +1,185 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-09-11*
+*Last updated: 2026-09-14*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-09-14 — jobs discovery audit: `none_found` was an architecture gap, not a Serper bug; `custom_html` adapter built; Apify retry + stale-error fix
+
+### Headline: the premise going in was wrong, and that changed the fix
+
+The session opened from a diagnosis that the Serper-backed discovery step was
+"failing wholesale" for the 46 `none_found` companies (38 carrying
+`last_scrape_error='serper_no_results'`), with Orreco named as a verified
+counter-example — a company with a live Galway opening on `orreco.com/careers`
+that the pipeline never surfaced. Four findings overturned that:
+
+1. **There is no Serper-backed discovery step.** Discovery is
+   `jobs_discovery/discover_career_pages.py` — an offline CSV script, run by
+   hand, invoked by no workflow. Serper appears only in
+   `adapters/linkedin.py`, which is a *scraper* for `none_found` sources, not
+   a discoverer of careers pages.
+2. **Serper is healthy and the query is sound.** Re-running the exact
+   production query (`site:linkedin.com/jobs/view "{name}"`, `tbs=qdr:m`,
+   `gl=ie`) against all 38 companies live returned zero job-view URLs for
+   **34 of them**. `serper_no_results` was a true negative: these companies
+   genuinely have no LinkedIn postings indexed in the past month.
+3. **`orreco.com/careers` 404s.** Orreco moved to `orreco.ai`, which has no
+   careers page at any standard path. The DB's `careers_url` is stale. The
+   pipeline was not missing a findable job there.
+4. **The actual gap is architectural.** `none_found` routed 100% to
+   LinkedIn-via-Serper, 44 of 46 rows had no `careers_url` at all, and
+   `custom_html` was a **dead classification** — the discovery script could
+   emit it, but no adapter consumed it. A company advertising on its own site
+   was reachable by nothing.
+
+### Changes
+
+**`jobs_pipeline/adapters/custom_html.py` (new)** — generic careers-page
+scraper. Two passes, first non-empty wins: schema.org/JobPosting JSON-LD
+(incl. `@graph`), then anchors matching a job-detail href *and* a title-shaped
+text. Card-style listings (whole card wrapped in one `<a>`) take their title
+from the first inner block, not the concatenated anchor text — without this
+Playhera's two live roles were silently dropped. Titles pass through
+`relevance_filter.check_relevance`; output capped at 40/company. Wired into
+`weekly/runner.py` after the ATS adapters. Entry point
+`run_custom_html.py --dry-run --company`. 14 offline parser tests in
+`jobs_pipeline/test_custom_html.py`.
+
+**`jobs_discovery/discover_career_pages.py`** — two fixes. (a) `_corroborate_ats()`
+requires a company's own site to reference an ATS board before a phase-1 slug
+guess is trusted, after the One Zero incident below; uncorroborated hits are
+recorded `needs_manual_review=true` rather than auto-trusted. It fails closed,
+so Cloudflare-fronted sites that TLS-fingerprint `aiohttp` (kitmanlabs.com)
+read as uncorroborated - never activate such a source without a manual check.
+`BROWSER_HEADERS` reduces but does not eliminate those 403s. (b) phase 2
+accepted any HTTP 200
+as a careers page. Small-business sites answer 200 for every path, so this
+manufactured `custom_html` rows pointing at homepages and error pages: a
+58-company run produced **12 `custom_html` classifications, all 12 false
+positives**. New `is_real_careers_page()` rejects a 200 on redirect drift,
+soft-404 markers, empty JS shell (<200 chars visible text), or fewer than 2
+job-listing markers. ATS embed fingerprints bypass the guards. Re-running the
+same 58 companies after the fix: **0 false positives**.
+
+**`jobs_pipeline/adapters/apify_linkedin.py`** — `_call_actor()` had no retry,
+so one 502 parked a company until the next weekly run (Stats Perform: stale
+2026-07-31 → 2026-09-11, six weeks, visible only by querying the table).
+Now retries 3× with exponential backoff + jitter on 408/429/5xx and network
+errors; non-transient failures still raise on the first attempt. Exhausted
+retries produce `_ApifyTransientError`, write
+`last_scrape_error='apify_unavailable after N attempts: ...'`, and land in
+`adapter.exhausted_companies`, which `weekly/runner.py` folds into the step's
+`error_message` and downgrades the step to `warning`. Error bodies pass
+through `_squash()` (Apify's full nginx HTML 502 page → one readable line).
+
+**`jobs_pipeline/supabase_jobs_client.py` + all three `run()` paths** —
+`last_scrape_error` was write-only: nothing ever cleared it. Stats Perform's
+Apify call **succeeded** on 2026-09-14 and its row still showed the
+2026-09-11 502. This is the single biggest reason the bucket looked broken
+under diagnosis. `mark_source_successful()` now clears the error;
+`mark_source_attempted()` takes `clear_error=False`, passed `True` only when
+`fetch()` returned without raising (an empty board is a clean run, not a
+failed one). The default matters: `mark_source_attempted` also runs from
+`run()`'s `finally` immediately after `_update_source_error`, so clearing
+unconditionally would erase the error just written.
+
+### Data changes (live, hub `xwqmnofkvdwpagfweqmj`)
+
+- **58 companies had no `company_careers_sources` row at all** and were
+  scraped by nothing. Discovery run for all of them; 58 rows inserted
+  (1 `bamboohr`, 57 `none_found`). **Every company now has a source row (0
+  remaining).** Active sources 77 → 135.
+- **4 `none_found` rows upgraded to `custom_html`**: Clubforce, Hexis,
+  Incisiv, Playhera.
+- **One Zero: 10 misattributed jobs created and removed the same session.**
+  Discovery's phase-1 slug guess `onezero` matched a live BambooHR board that
+  belongs to **oneZero Financial Systems** (Somerville MA, FX trading tech),
+  not the Irish company. Caught because every location was wrong (Somerville,
+  Canberra, Limassol, Rosebank) for an Irish sportstech firm. The 10 jobs were
+  deleted, the source reverted to `none_found` + `needs_manual_review=true`
+  with an explanatory note. `onezero.sport` does not resolve (NXDOMAIN) -
+  someone should confirm the company still trades. This is the identical
+  failure to the 2026-05-28 EA Sports `ea` slug, which is why
+  `_corroborate_ats()` was added (see ARCHITECTURE.md). **Lesson: an
+  `is_active=True` insert off an uncorroborated ATS slug guess puts bad jobs
+  into the hub within one scrape.**
+- **TeamFeePay added** (was absent from `companies` entirely). Belfast;
+  `is_irish_founded=true`, `country='Ireland'`, matching the existing Belfast
+  precedent (Incisiv). Source row `custom_html`, `needs_manual_review=true` —
+  its listings render through an iframe to `seemehired.com`, confirmed to
+  return HTTP 200 with **zero** visible text to a plain fetch, so it needs a
+  JS-capable fetch this adapter does not do.
+- Stats Perform's stale 502 `last_scrape_error` cleared by hand (one row).
+
+### Re-scrape results (task 6 before/after)
+
+All 99 `none_found` rows (46 existing + 53 newly inserted) and the
+never-succeeded `linkedin_only` rows were re-scraped after the fixes.
+
+| | before | after |
+|---|---|---|
+| companies with no source row at all | 58 | **0** |
+| active sources | 77 | **135** |
+| companies producing >=1 job | 40 | **41** |
+| jobs total | 2742 | 2744 |
+| distinct `last_scrape_error` values | 2 (incl. a multi-line HTML blob) | 1 (`serper_no_results`) |
+
+**The Serper sweep returned 0 jobs across 99/99 companies, with 0 errors** -
+the strongest confirmation that `serper_no_results` was never a bug:
+
+- **77 of 99**: Serper returned no LinkedIn job-view URLs at all (true negative).
+- **13 of 99**: results returned, every URL rejected by the wrong-country domain filter.
+- **9 of 99**: pages fetched, all 55 rejected by company-name validation (a
+  different company with a similar name - e.g. "Hotfoot" vs "Hotfoot Recruiters").
+
+The 8 never-succeeded `linkedin_only` companies behaved the same way, all 8
+re-run individually: **every Apify actor call succeeded** (25 items fetched
+each), and every item was dropped by name validation - Danu Sport, DB Sports
+Tours, Impact Gumshields, PFF, Off The Ball, Sport Endorse, Thrive Global,
+Wylde, 0 errors across the set. None of them was failing; LinkedIn's loose
+keyword search simply returns unrelated companies for those names. All 12
+`linkedin_only` rows now carry no error at all (was 3 `serper_no_results`
+plus Stats Perform's 502 blob).
+
+Net new jobs came only from the paths that did not exist before: **Playhera, 2
+roles via the new `custom_html` adapter** - a company that had been in the
+`none_found` bucket producing nothing.
+
+**The stale-error fix is confirmed working in production.** The Apify batch ran
+one process per company, so companies processed after the edit picked up the
+new code: **PFF, DB Sports Tours and Impact Gumshields each carried
+`serper_no_results` going in and show no error after a clean run.** All 12
+`linkedin_only` rows now read error-free.
+
+**Caveat on the Serper numbers**: that sweep was a single long-lived process
+started *before* the fix, so it ran the pre-fix code throughout. BRS Golf,
+Legitfit, Nutritics and Usheru all returned real Serper results today yet still
+read `serper_no_results` - a label that is now simply wrong for them. They
+clear on the next weekly run.
+
+### Open / not done
+
+- **`location = NULL` on approved jobs** — out of scope this session, still open.
+- **`Super Technologies`** (greenhouse slug `super`) — checked, not touched, as
+  instructed. Precisely: the *source row* is already `is_active=false` (last
+  successful scrape 2026-07-17), but **1 job remains `status='approved'`** in
+  `public.jobs`. That approved job is what still needs rejecting by hand —
+  deactivating the source did not retract it.
+- **The Apify retry path has not been exercised against a live 502.** Apify
+  was healthy on 2026-09-14 (Stats Perform fetched 25 items cleanly), so the
+  retry is covered by mocked unit tests only, not a real outage.
+- **`workable`, `smartrecruiters`, `recruitee`** are permitted by the
+  `ats_platform` CHECK constraint but have **no adapters** — the same dead-
+  classification trap `custom_html` was in. Check for an adapter before
+  importing a new platform.
+- **A Serper network error still raises `_SerperNoResultsError`**
+  (`adapters/linkedin.py`), so a transport failure is indistinguishable from a
+  true negative in `last_scrape_error`. Not fixed this session.
+- **Discovery remains manual.** Nothing schedules `jobs_discovery/`. The
+  58-company gap will re-open as companies are added.
 
 ---
 

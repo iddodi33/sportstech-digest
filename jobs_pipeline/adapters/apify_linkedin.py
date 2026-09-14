@@ -27,7 +27,9 @@ recorded, run() returns cleanly.
 
 import logging
 import os
+import random
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -54,6 +56,14 @@ _ACTOR_URL = f"https://api.apify.com/v2/acts/{_ACTOR}/run-sync-get-dataset-items
 # only exists to catch a handful of recent postings per company, not to
 # exhaustively mirror LinkedIn's index.
 _COUNT_PER_URL = 25
+
+# Transient-failure retry for the Apify actor call. Apify's run-sync endpoint
+# returns 502/503/504 when the actor platform is briefly unavailable; without
+# a retry a single blip silently parks a company until the next weekly run
+# (Stats Perform went stale 2026-07-31 → 2026-09-11 this way).
+_RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE_SECONDS = 5.0
 
 # LinkedIn's own f_TPR "past month" preset (seconds). Coarse pre-filter
 # applied actor-side; MAX_JOB_AGE_DAYS below is the precise, configurable
@@ -119,6 +129,24 @@ def _parse_posted_at(value: object) -> int | None:
     return None
 
 
+def _squash(body: str, limit: int = 120) -> str:
+    """Collapse an error body to one short line.
+
+    Apify's 502 returns a full nginx HTML page; storing it verbatim made
+    last_scrape_error an unreadable multi-line blob. Strip tags/whitespace
+    and keep the leading text.
+    """
+    text = re.sub(r"<[^>]+>", " ", body or "")
+    text = " ".join(text.split())
+    return text[:limit] if text else "(empty body)"
+
+
+class _ApifyTransientError(_ApifyRequestError):
+    """Retryable Apify failure (5xx / 429 / network). Subclasses
+    _ApifyRequestError so existing per-company skip handling still applies
+    once retries are exhausted."""
+
+
 class ApifyLinkedInAdapter(BaseAdapter):
     """Scrape linkedin_only companies via the Apify LinkedIn Jobs Scraper actor.
 
@@ -133,15 +161,18 @@ class ApifyLinkedInAdapter(BaseAdapter):
         self._token: str = os.getenv("APIFY_TOKEN", "")
         self.abort: bool = False
         self._last_audit: dict = {}
+        # Surfaced by the weekly runner so a degraded Apify shows up in the
+        # run report instead of only in company_careers_sources.
+        self.transient_retries: int = 0
+        self.exhausted_companies: list[str] = []
 
     # ── Apify call ────────────────────────────────────────────────────────────
 
-    def _call_actor(self, urls: list[str]) -> list[dict]:
-        """POST to the Apify actor; return raw dataset items.
+    def _call_actor_once(self, urls: list[str]) -> list[dict]:
+        """Single POST to the Apify actor; return raw dataset items.
 
-        Raises _ApifyRequestError on network/HTTP failure — caller treats
-        this as a per-company skip, not a run-wide abort (a transient Apify
-        hiccup for one company shouldn't stop the rest).
+        Raises _ApifyTransientError on network errors and retryable HTTP
+        statuses (_RETRY_STATUS); _ApifyRequestError on everything else.
         """
         try:
             resp = requests.post(
@@ -151,12 +182,15 @@ class ApifyLinkedInAdapter(BaseAdapter):
                 timeout=180,
             )
         except requests.exceptions.RequestException as exc:
-            raise _ApifyRequestError(f"network error: {exc}") from exc
+            raise _ApifyTransientError(f"network error: {exc}") from exc
 
         # run-sync-get-dataset-items returns 201 (Created) on a successful
         # synchronous run, not 200 — treat both as success.
         if resp.status_code not in (200, 201):
-            raise _ApifyRequestError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            detail = f"HTTP {resp.status_code}: {_squash(resp.text)}"
+            if resp.status_code in _RETRY_STATUS:
+                raise _ApifyTransientError(detail)
+            raise _ApifyRequestError(detail)
 
         try:
             data = resp.json()
@@ -167,6 +201,46 @@ class ApifyLinkedInAdapter(BaseAdapter):
             raise _ApifyRequestError(f"unexpected response shape: {type(data).__name__}")
 
         return data
+
+    def _call_actor(self, urls: list[str]) -> list[dict]:
+        """POST to the Apify actor, retrying transient failures with backoff.
+
+        Retries up to _MAX_ATTEMPTS times on 408/429/5xx and network errors,
+        sleeping _BACKOFF_BASE_SECONDS * 2**n plus jitter between attempts.
+        Non-transient failures (bad token, 4xx, malformed body) raise on the
+        first attempt — retrying those just repeats the same failure.
+
+        Raises _ApifyRequestError (or _ApifyTransientError, a subclass, when
+        every attempt was transient) — the caller skips this company only.
+        """
+        last_exc: _ApifyRequestError | None = None
+
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                return self._call_actor_once(urls)
+            except _ApifyTransientError as exc:
+                last_exc = exc
+                if attempt == _MAX_ATTEMPTS:
+                    break
+                delay = _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+                delay += random.uniform(0, delay * 0.25)
+                log.warning(
+                    "apify_linkedin: transient failure (attempt %d/%d): %s "
+                    "— retrying in %.1fs",
+                    attempt, _MAX_ATTEMPTS, exc, delay,
+                )
+                self.transient_retries += 1
+                time.sleep(delay)
+
+        # Unreachable: the loop only exits via return or a caught transient.
+        if last_exc is None:
+            raise _ApifyRequestError("actor call failed with no recorded error")
+
+        log.error(
+            "apify_linkedin: giving up after %d attempts: %s",
+            _MAX_ATTEMPTS, last_exc,
+        )
+        raise last_exc
 
     # ── fetch() ───────────────────────────────────────────────────────────────
 
@@ -300,10 +374,14 @@ class ApifyLinkedInAdapter(BaseAdapter):
             "errors": 0,
         }
         upserted_count = 0
+        # True once fetch() returned without raising - an empty result is a
+        # clean run, so any stale last_scrape_error should be cleared.
+        fetch_ok = False
 
         try:
             try:
                 jobs = self.fetch(source)
+                fetch_ok = True
 
             except _ApifyTokenMissingError as exc:
                 log.error("apify_linkedin: %s — aborting run", exc)
@@ -314,10 +392,22 @@ class ApifyLinkedInAdapter(BaseAdapter):
                 return stats
 
             except _ApifyRequestError as exc:
-                log.warning("apify_linkedin: '%s' — request failed: %s", source_name, exc)
+                transient = isinstance(exc, _ApifyTransientError)
+                if transient:
+                    # Every attempt failed transiently — Apify itself is down
+                    # or degraded for this company, not a config problem.
+                    self.exhausted_companies.append(source_name)
+                    prefix = f"apify_unavailable after {_MAX_ATTEMPTS} attempts"
+                else:
+                    prefix = "apify_error"
+                log.warning(
+                    "apify_linkedin: '%s' — request failed (%s): %s",
+                    source_name, prefix, exc,
+                )
                 if source_id:
-                    _update_source_error(source_id, f"apify_error: {exc}")
+                    _update_source_error(source_id, f"{prefix}: {exc}")
                 stats["errors"] += 1
+                stats["apify_unavailable"] = transient
                 return stats
 
             except Exception as exc:
@@ -372,4 +462,4 @@ class ApifyLinkedInAdapter(BaseAdapter):
                 if upserted_count > 0:
                     mark_source_successful(source_id, run_started_at)
                 else:
-                    mark_source_attempted(source_id, run_started_at)
+                    mark_source_attempted(source_id, run_started_at, clear_error=fetch_ok)

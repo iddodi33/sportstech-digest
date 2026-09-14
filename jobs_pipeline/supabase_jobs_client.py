@@ -191,29 +191,51 @@ def mark_job_seen(job_id: str, run_started_at: datetime) -> None:
 
 
 def mark_source_successful(source_id: str, run_started_at: datetime) -> None:
-    """Record a successful scrape (at least one job upserted) on company_careers_sources."""
+    """Record a successful scrape (at least one job upserted).
+
+    Also clears last_scrape_error: a run that upserted jobs proves the
+    previous error no longer applies. Without this the column is write-only
+    and a long-resolved failure keeps reading as current - Stats Perform
+    showed a 2026-09-11 Apify 502 through a clean 2026-09-14 run.
+    """
     client = _get_client()
     if client is None:
         return
     ts = run_started_at.isoformat()
     try:
         client.table("company_careers_sources").update(
-            {"last_successful_scrape_at": ts, "last_scrape_run_at": ts}
+            {
+                "last_successful_scrape_at": ts,
+                "last_scrape_run_at": ts,
+                "last_scrape_error": None,
+            }
         ).eq("id", source_id).execute()
     except Exception as exc:
         log.warning("mark_source_successful failed for source_id=%s: %s", source_id, exc)
 
 
-def mark_source_attempted(source_id: str, run_started_at: datetime) -> None:
-    """Record a scrape attempt (regardless of outcome) on company_careers_sources.
+def mark_source_attempted(
+    source_id: str, run_started_at: datetime, clear_error: bool = False
+) -> None:
+    """Record a scrape attempt (regardless of outcome).
+
     Leaves last_successful_scrape_at untouched.
+
+    clear_error must only be True when the fetch completed without raising -
+    a board that is genuinely empty is not a failed board, so its stale error
+    should go. It defaults to False because this is also called (via run()'s
+    finally block) immediately after _update_source_error has recorded a
+    failure, and clearing there would erase the error just written.
     """
     client = _get_client()
     if client is None:
         return
+    payload: dict = {"last_scrape_run_at": run_started_at.isoformat()}
+    if clear_error:
+        payload["last_scrape_error"] = None
     try:
-        client.table("company_careers_sources").update(
-            {"last_scrape_run_at": run_started_at.isoformat()}
-        ).eq("id", source_id).execute()
+        client.table("company_careers_sources").update(payload).eq(
+            "id", source_id
+        ).execute()
     except Exception as exc:
         log.warning("mark_source_attempted failed for source_id=%s: %s", source_id, exc)

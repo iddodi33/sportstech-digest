@@ -124,10 +124,20 @@ def build_email(
 </table>"""
 
     # ── 4. Adapter errors ──────────────────────────────────────────────────────
-    if failed_adapters:
+    # Include warning-status adapters that carry a message, not just failures:
+    # a degraded step (e.g. Apify exhausting its retries for some companies)
+    # still yielded jobs, so it is not "failed", but its message is the only
+    # place that degradation is visible outside company_careers_sources.
+    reported = [
+        r for r in adapter_results
+        if r["status"] == "failed" or (r["status"] == "warning" and r.get("error_message"))
+    ]
+    if reported:
         items = "".join(
-            f"<li><strong>{_h(r['step_name'])}</strong>: {_h(r['error_message'] or 'unknown')}</li>"
-            for r in failed_adapters
+            f"<li><strong>{_h(r['step_name'])}</strong>"
+            f"{' (warning)' if r['status'] == 'warning' else ''}: "
+            f"{_h(r['error_message'] or 'unknown')}</li>"
+            for r in reported
         )
         section4 = f"<h3>Adapter Errors</h3><ul>{items}</ul>"
     else:

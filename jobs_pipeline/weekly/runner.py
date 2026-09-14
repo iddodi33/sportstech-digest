@@ -22,6 +22,7 @@ from ..adapters.teamtailor import TeamtailorAdapter
 from ..adapters.workday import WorkdayAdapter
 from ..adapters.rippling import RipplingAdapter
 from ..adapters.phenom import PhenomAdapter
+from ..adapters.custom_html import CustomHTMLAdapter
 from ..adapters.linkedin import LinkedInAdapter
 from ..adapters.apify_linkedin import ApifyLinkedInAdapter
 
@@ -42,6 +43,9 @@ ATS_ADAPTERS: list[tuple[str, type]] = [
     ("workday",     WorkdayAdapter),
     ("rippling",    RipplingAdapter),
     ("phenom",      PhenomAdapter),
+    # Company-owned careers pages with no ATS. Runs after the ATS adapters so
+    # a company that also has a real ATS is picked up by the stronger path.
+    ("custom_html", CustomHTMLAdapter),
 ]
 
 
@@ -153,6 +157,7 @@ def run_linkedin_apify_adapter() -> dict:
     log.info("=== Starting linkedin_apify adapter ===")
     t0 = time.time()
     per_source: list[dict] = []
+    adapter: ApifyLinkedInAdapter | None = None
 
     try:
         sources = get_apify_linkedin_sources()
@@ -174,10 +179,27 @@ def run_linkedin_apify_adapter() -> dict:
 
     runtime = time.time() - t0
     result = _aggregate("linkedin_apify", per_source, runtime)
+
+    # Apify being down for a company is invisible unless we say so here --
+    # previously it only showed up by querying company_careers_sources.
+    exhausted = list(adapter.exhausted_companies) if adapter else []
+    if exhausted:
+        note = (
+            f"Apify unavailable, {len(exhausted)} company/companies exhausted "
+            f"all retries: {', '.join(sorted(exhausted))}"
+        )
+        if result["status"] == "success":
+            result["status"] = "warning"
+        result["error_message"] = (
+            f"{result['error_message']}; {note}" if result.get("error_message") else note
+        )
+        log.error("linkedin_apify: %s", note)
+
     log.info(
-        "=== linkedin_apify complete: %d scraped, %d new, %d updated, runtime %s ===",
-        result["jobs_scraped"], result["jobs_new"],
-        result["jobs_updated"], fmt_runtime(runtime),
+        "=== linkedin_apify complete: %d scraped, %d new, %d updated, "
+        "%d transient retries, runtime %s ===",
+        result["jobs_scraped"], result["jobs_new"], result["jobs_updated"],
+        adapter.transient_retries if adapter else 0, fmt_runtime(runtime),
     )
     return result
 

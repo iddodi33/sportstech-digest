@@ -824,10 +824,15 @@ class LinkedInAdapter(BaseAdapter):
             "errors": 0,
         }
         upserted_count = 0
+        # True once fetch() returned without raising - a company with no
+        # matching listings is a clean run, so its stale last_scrape_error
+        # should be cleared rather than left reading as a current failure.
+        fetch_ok = False
 
         try:
             try:
                 jobs = self.fetch(source)
+                fetch_ok = True
 
             except _SerperAuthError as exc:
                 log.error("linkedin: Serper auth failure — aborting run: %s", exc)
@@ -908,4 +913,4 @@ class LinkedInAdapter(BaseAdapter):
                 if upserted_count > 0:
                     mark_source_successful(source_id, run_started_at)
                 else:
-                    mark_source_attempted(source_id, run_started_at)
+                    mark_source_attempted(source_id, run_started_at, clear_error=fetch_ok)

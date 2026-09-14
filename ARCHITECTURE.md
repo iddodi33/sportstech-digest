@@ -96,7 +96,63 @@ All adapters follow the `BaseAdapter` pattern in `adapters/base.py`: `fetch()` r
 
 **Phenom** — Adapter code exists. Zero active sources currently.
 
+**custom_html** (`adapters/custom_html.py`, added 2026-09-14) — Generic scraper for companies that publish roles on their own site with no ATS behind them. Reads `careers_url` from the source row, plain HTTP GET (no JS execution). Two passes, first non-empty wins: (1) schema.org/JobPosting JSON-LD blocks, including `@graph` nesting; (2) anchors whose href matches a job-detail pattern *and* whose text passes a nav-furniture/prose filter. Returns `[]` for a reachable page with no openings — the correct answer for a small company between hires, and much cheaper than a false positive. Titles pass through `relevance_filter.check_relevance` like the LinkedIn adapters; output capped at 40 jobs per company (exceeding the cap means the page is being mis-parsed). Parser tests: `jobs_pipeline/test_custom_html.py`. **Before 2026-09-14 `custom_html` was a dead classification** — the discovery script could emit it but nothing in `jobs_pipeline` consumed it.
+
+**Platforms allowed by the CHECK constraint with no adapter**: `workable`, `smartrecruiters`, `recruitee`, plus `rippling`/`phenom` (adapters exist, zero sources). Discovery assigning one of these produces a row nothing will ever scrape — the same trap `custom_html` was in. Check for an adapter before importing a new platform.
+
 **LinkedIn/Serper** — See dedicated section below.
+
+---
+
+## Careers-page discovery (`jobs_discovery/`)
+
+Discovery is **offline and manual**, not part of any cron. `discover_career_pages.py`
+reads a CSV of companies, probes them, and writes `career_pages.csv`;
+`import_to_supabase.py` loads that into `company_careers_sources`. Nothing in
+`.github/workflows/` runs either. A company added to `companies` therefore gets
+**no** source row until someone runs this by hand — as of 2026-09-14, 58 of 135
+companies were in that state.
+
+Three phases per company: (1) probe ~10 ATS APIs across slug variants;
+(2) fetch `/careers`, `/jobs`, `/join-us`, ... looking for an ATS embed
+fingerprint; (3) classify.
+
+**Soft-404 validation (added 2026-09-14).** Phase 2 previously accepted any
+HTTP 200 as a careers page. Small-business sites (Wix, Squarespace, Webflow,
+SPAs) answer 200 for every path, so this manufactured `custom_html` rows
+pointing at homepages and error pages — an audit of a 58-company run found
+**12 of 12 such classifications were false positives**. `is_real_careers_page()`
+now rejects a 200 on three grounds before it can become `custom_html`:
+
+| Guard | Catches |
+|---|---|
+| redirect drift | `/careers` 30x's to a URL with no careers-ish segment |
+| soft 404 | body contains "page not found", "coming soon", ... in its first 2000 chars |
+| empty JS shell | under 200 chars of visible text (listings render client-side) |
+| no listing signal | fewer than 2 of ~16 job-listing markers ("apply now", "open position", ...) |
+
+ATS embed fingerprints bypass these guards — an ATS marker is strong evidence
+on its own even on a sparse page. A page failing validation falls through to
+`none_found` + `needs_manual_review` rather than becoming a bogus source row.
+
+**ATS slug corroboration (added 2026-09-14).** Phase 1 guesses slugs from the
+company name and domain and accepts any live board that answers. A slug can
+name a *different* company's board: `onezero` matched oneZero Financial
+Systems' BambooHR board (Somerville MA, FX trading software) and produced
+**10 misattributed jobs** for the Irish company "One Zero" before it was
+caught the same day — the identical failure to the 2026-05-28 EA Sports `ea`
+slug. `_corroborate_ats()` now requires the company's own site to reference
+both the platform domain and the slug before a phase-1 hit is trusted; an
+uncorroborated hit is still recorded but as `confidence='medium'` +
+`needs_manual_review=true` with an `UNCORROBORATED:` note.
+
+It **fails closed**, and that produces false negatives. Cloudflare-fronted
+sites TLS-fingerprint `aiohttp` and return 403 where `requests` gets 200
+(kitmanlabs.com does exactly this), so a genuine board can read as
+uncorroborated. That is the safe direction, but it means:
+**never activate an ATS source carrying `needs_manual_review=true` without
+checking the board by hand first.** `BROWSER_HEADERS` (Accept /
+Accept-Language / Sec-Fetch-*) reduces, but does not eliminate, the 403s.
 
 ---
 
@@ -258,6 +314,21 @@ company-name `if` branch. To take a company fully out of scope, set
   pipeline does **not** treat this as fatal — `APIFY_TOKEN` is intentionally
   excluded from `run_weekly.py`'s required-env check, so this step degrades
   to a logged warning in the weekly email rather than aborting the whole run.
+- Transient-failure retry (added 2026-09-14): `_call_actor()` retries the
+  actor call up to `_MAX_ATTEMPTS` (3) on `_RETRY_STATUS`
+  (408/429/500/502/503/504) and on network errors, with exponential backoff
+  (`_BACKOFF_BASE_SECONDS` 5s, doubling, plus up to 25% jitter). Non-transient
+  failures (401/403, malformed body) raise on the first attempt — retrying
+  those just repeats the same failure. When every attempt fails transiently
+  the error is `_ApifyTransientError` (a subclass of `_ApifyRequestError`, so
+  the existing per-company skip still applies), `last_scrape_error` is written
+  as `apify_unavailable after N attempts: ...`, and the company is added to
+  `adapter.exhausted_companies`, which `weekly/runner.py` folds into the step's
+  `error_message` and downgrades the step to `warning`. **Why**: Stats Perform
+  went stale from 2026-07-31 to 2026-09-11 on a repeating `HTTP 502` with no
+  retry and no alert — visible only by querying `company_careers_sources`
+  directly. Error bodies now pass through `_squash()`, which collapses Apify's
+  full nginx HTML 502 page to one readable line.
 - Company-name validation: **always runs**, regardless of whether
   `linkedin_search_name` is set — this is a deliberate divergence from the
   Serper adapter's `_validate_name`, which safely skips the equality check
@@ -293,6 +364,10 @@ Query format:
 Recency window: the Serper payload includes `tbs=_SERPER_RECENCY_TBS` (`"qdr:m"` — past month) so discovery only returns recently-posted listings rather than ranking by relevance. Widen (`qdr:y`) or narrow (`qdr:w`) via the module constant.
 
 Returns up to 10 LinkedIn job-view URLs from Serper organic results.
+
+**`serper_no_results` is usually a true negative, not a fault (audited 2026-09-14).** 38 of the 46 `none_found` rows carried this error and the bucket looked broken. Re-running the exact production query (`site:linkedin.com/jobs/view "{name}"`, `tbs=qdr:m`, `gl=ie`) against all 38 live returned zero job-view URLs for 34 of them. The key is valid, quota is not exhausted, the query is sound — those companies genuinely have no LinkedIn postings indexed in the past month. Do not "fix" this by loosening the query; the real gap was that `none_found` routed **only** to LinkedIn, so a company advertising on its own careers page was reachable by nothing (see `custom_html` above).
+
+One genuine defect does exist here: a Serper **network error** raises `_SerperNoResultsError` (`adapters/linkedin.py`, `_discover_urls`), so a transport failure is recorded as "no results" and is indistinguishable from a true negative in `last_scrape_error`.
 
 **Stage 2 — Domain filter**
 Indigenous companies: accept `ie.linkedin.com` and `www.linkedin.com`.

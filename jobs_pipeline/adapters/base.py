@@ -113,10 +113,14 @@ class BaseAdapter(ABC):
             "errors": 0,
         }
         upserted_count = 0
+        # True once fetch() has returned without raising. An empty board is a
+        # clean run, so its stale last_scrape_error should be cleared.
+        fetch_ok = False
 
         try:
             try:
                 jobs = self.fetch(source)
+                fetch_ok = True
             except Exception as exc:
                 log.error("[%s] fetch() failed: %s", source_name, exc)
                 stats["errors"] += 1
@@ -177,4 +181,4 @@ class BaseAdapter(ABC):
                 if upserted_count > 0:
                     mark_source_successful(source_id, run_started_at)
                 else:
-                    mark_source_attempted(source_id, run_started_at)
+                    mark_source_attempted(source_id, run_started_at, clear_error=fetch_ok)

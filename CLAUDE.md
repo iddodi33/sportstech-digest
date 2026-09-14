@@ -43,7 +43,9 @@ sportstech-digest/
     run_archive_sweep.py         Archive stale jobs
     run_weekly.py                Full weekly orchestrator
     supabase_jobs_client.py      DB helpers (upsert, mark_seen, mark_source_*)
-    adapters/                    One file per ATS platform + base.py (linkedin.py=Serper/none_found, apify_linkedin.py=Apify/linkedin_only)
+    adapters/                    One file per ATS platform + base.py (linkedin.py=Serper/none_found, apify_linkedin.py=Apify/linkedin_only, custom_html.py=own-site careers pages)
+    run_custom_html.py           custom_html entry point (--dry-run, --company)
+    test_custom_html.py          Offline parser tests for custom_html
     weekly/                      runner.py, snapshot.py, email_builder.py, sendgrid_client.py
     run_<platform>.py            Per-platform entry points
   events_pipeline/               Weekly events scraper (Friday 06:00 UTC)
@@ -89,6 +91,30 @@ sportstech-digest/
   token figures to each pipeline's article count — neither comes from an observed run of
   its own. Retune both from `scripts/data/daily_monitor_usage.jsonl` (the `pipeline` field
   separates them) once real runs have accumulated.
+- **Careers-page discovery is manual, and adding a company is not enough.**
+  `jobs_discovery/` is an offline CSV pipeline run by hand; no workflow invokes it.
+  A row in `companies` with no `company_careers_sources` row is scraped by nothing
+  (58 of 135 companies were in that state on 2026-09-14). Adding a company means:
+  insert into `companies`, run discovery, import the source row, and confirm the
+  resulting `ats_platform` has an adapter.
+- **Never activate an ATS source from an uncorroborated slug guess.** Discovery
+  probes slugs derived from the company name/domain; a hit only proves that
+  slug names *a* live board, not *this* company's. `onezero` matched oneZero
+  Financial Systems' BambooHR board and put 10 misattributed jobs in the hub on
+  2026-09-14 (same failure as EA Sports' `ea` slug in May). `_corroborate_ats()`
+  now flags these `needs_manual_review=true` — check the board by hand before
+  setting `is_active=true`. It fails closed, so some genuine boards are flagged
+  too (Cloudflare sites 403 `aiohttp`); that is intended.
+- **Check an ATS platform has an adapter before importing it.** The
+  `ats_platform` CHECK constraint permits `workable`, `smartrecruiters` and
+  `recruitee`, none of which have adapters; `rippling`/`phenom` have adapters but
+  zero sources. A source row on a platform with no adapter is scraped by nothing
+  and reports no error. `custom_html` was in exactly this state until 2026-09-14.
+- **`serper_no_results` on a `none_found` row is usually correct.** Verified
+  2026-09-14 against the live API: 34 of 38 such companies genuinely have no
+  LinkedIn postings indexed in the past month. The key and query are fine. Treat a
+  mass of these as evidence the company advertises somewhere else (its own site),
+  not as a Serper fault — see ARCHITECTURE.md.
 - **FDI allowlist pattern.** When adding a new FDI company to the pipeline, set `fdi_classifier_allowlisted=true` on the `companies` row AND verify an active source exists in `company_careers_sources`. Do not assume a company row alone is sufficient.
 
 ---
@@ -167,6 +193,8 @@ python digest.py
 python jobs_pipeline/run_greenhouse.py
 python jobs_pipeline/run_linkedin.py --dry-run --company "Hexis"          # none_found, via Serper
 python jobs_pipeline/run_linkedin_apify.py --dry-run --company "Hexis"    # linkedin_only, via Apify
+python jobs_pipeline/run_custom_html.py --dry-run --company "TeamFeePay"  # custom_html, own-site careers page
+python jobs_pipeline/test_custom_html.py                                 # offline parser tests, no network
 
 # Jobs — classifier and archive sweep
 python jobs_pipeline/run_classifier.py
