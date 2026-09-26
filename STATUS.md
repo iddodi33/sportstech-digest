@@ -1,8 +1,57 @@
 # STATUS.md — sportstech-digest
 
-*Last updated: 2026-09-14*
+*Last updated: 2026-09-26*
 
 Rolling log of changes and open issues. Most recent session first.
+
+---
+
+## Session 2026-09-26 — daily monitor crashed on Resend 429; sheepesports match pages
+
+### What happened
+
+The 13:31 UTC run scored 14 articles 3+, upserted all 14, then emailed in a tight loop.
+Email 11 hit Resend 429 (10 req/s), `raise_for_status()` propagated, exit 1, and
+`save_seen()` never ran, so the 10 emails already sent were not recorded. The workflow's
+commit step also had no `if: always()`, so it would have been skipped anyway.
+11 of the 14 were sheepesports.com Rocket League match pages (2023-2025 fixtures).
+
+### Root cause of the old match pages passing the 72h window
+
+Not a date-parse fallback. The `esports ireland` Google News feed itself carries fresh
+`pubDate`s on these pages (Google's crawl time, e.g. a Spring Series 2024 match dated
+`Sat, 26 Sep 2026 02:17:54 GMT`); `published_parsed` parsed them correctly and the hub
+rows carry the same timestamps. Separately, `is_within_hours()` does return
+`(True, None)` for an unparseable date, so undated items ARE treated as fresh — a real
+but latent weakness that did not cause this run. Left unchanged pending a decision.
+
+### What shipped
+
+- **`email_client.py`** — 150ms spacing between sends; a 429 is retried up to 3 times
+  (`retry-after` / `ratelimit-reset` header if present, else 1s/2s/4s), then raises.
+  Shared by every pipeline that emails.
+- **`daily_monitor.py`** — `send_email()` catches per article and returns False, so a
+  failed send goes to `unsent` and the loop continues. Seen list saved after every
+  successful send and again in a `finally`.
+- **`normalise_url()`** — lowercase scheme/host, strip the leading run of 2-letter path
+  segments, trailing slash, `utm_*` + common click-tracking params, fragment. Used for the
+  seen check, seen writes, and in-run dedup. Legacy seen entries are normalised on load.
+- **`URL_BLOCKLIST_PATTERNS`** — applied before scoring. First entry: sheepesports
+  `/matches/` pages.
+- **`daily_monitor.yml`** — commit step now `if: always()`.
+- **Seen backfill** — the 10 URLs emailed on 2026-09-26 (recovered from the run log,
+  cross-checked against hub `created_at`), stored normalised.
+- **`test_daily_monitor.py`** — offline tests (normalise_url, blocklist, legacy seen
+  load, 429 retry/backoff/exhaustion, throttle, run loop surviving a failed send).
+
+### Open
+
+- 11 sheepesports rows created 2026-09-26 sit in `news_items` as `pending`. Cleanup SQL
+  handed to Iddo to review and run; not run from here.
+- Undated-item fallback in `is_within_hours()` (see above) — decide skip vs flag.
+- The seen check runs after scoring, so already-seen articles are re-scored (paid) daily.
+- `daily_alerts_unsent_*.json` is written on the runner and not committed, so in CI
+  unsent alerts survive only as log lines.
 
 ---
 

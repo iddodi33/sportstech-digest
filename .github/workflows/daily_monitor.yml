@@ -37,7 +37,10 @@ jobs:
       # written by run_telemetry.py have to be committed back or they produce
       # nothing from scheduled runs. This step already existed for the seen list
       # and already has contents:write — the logs just join it.
+      # always(): a failed run (cost-ceiling abort, crash) still sent some emails and
+      # saved them to the seen list — skipping this step would lose those entries.
       - name: Commit seen URLs and run telemetry
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

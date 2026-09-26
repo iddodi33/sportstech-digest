@@ -155,12 +155,68 @@ def _extract_real_url(entry, title: str, decode: bool = False) -> tuple[str, boo
 # Seen-URL deduplication
 # ---------------------------------------------------------------------------
 
+# The whole leading run of 2-letter segments, not just the first: stripping one
+# isn't idempotent when the next segment is also 2 letters (sheepesports'
+# /en/rl/matches/ -> /rl/matches/ -> /matches/), and seen entries are stored
+# normalised and normalised again on load, so a non-idempotent key would drift.
+_LOCALE_SEGMENT_RE = re.compile(r"^(?:/[a-z]{2}(?=/|$))+", re.IGNORECASE)
+
+# Query params that identify a click, not a page. utm_* is matched by prefix.
+_TRACKING_PARAMS = {
+    "fbclid", "gclid", "dclid", "msclkid", "igshid", "mc_cid", "mc_eid",
+    "_ga", "_gl", "ocid", "cmpid", "ncid", "ref", "ref_src", "at_medium",
+    "at_campaign", "guccounter", "guce_referrer", "guce_referrer_sig",
+}
+
+
+def normalise_url(url: str) -> str:
+    """Canonical form of an article URL for the seen-list dedup.
+
+    Lowercases scheme and host, strips leading 2-letter locale path segments
+    (/en/, /us/, /kr/ — sheepesports served the same match under all three on
+    2026-09-26), strips the trailing slash, drops utm_* and other tracking params,
+    and drops the fragment. Idempotent, so already-normalised entries are unchanged.
+    """
+    if not url:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+    except ValueError:
+        return url.strip()
+    if not parts.netloc:
+        return url.strip()
+    path = _LOCALE_SEGMENT_RE.sub("", parts.path).rstrip("/")
+    query = urllib.parse.urlencode([
+        (k, v) for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        if not k.lower().startswith("utm_") and k.lower() not in _TRACKING_PARAMS
+    ])
+    return urllib.parse.urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), path, query, "")
+    )
+
+
+# Sources whose pages are never newsletter material. Matched against the
+# normalised URL before scoring, so blocked items cost no tokens. Add patterns here.
+URL_BLOCKLIST_PATTERNS = [
+    # Rocket League match result pages. Google News re-dates old ones with its
+    # crawl time, so 2023-2025 matches arrive looking <72h old and score 3.
+    r"://(?:www\.)?sheepesports\.com/(?:[^/?#]+/)*matches/",
+]
+_URL_BLOCKLIST_RE = [re.compile(p, re.IGNORECASE) for p in URL_BLOCKLIST_PATTERNS]
+
+
+def is_blocked_url(url: str) -> bool:
+    norm = normalise_url(url)
+    return any(p.search(norm) for p in _URL_BLOCKLIST_RE)
+
+
 def load_seen() -> set:
+    """Seen URLs, normalised on load so pre-normalisation entries still match."""
     if Path(SEEN_FILE).exists():
         try:
             with open(SEEN_FILE, encoding="utf-8") as f:
                 data = json.load(f)
-                return set(data.get("seen_urls", []))
+                return {normalise_url(u) for u in data.get("seen_urls", []) if u}
         except Exception:
             pass
     return set()
@@ -296,7 +352,7 @@ def fetch_recent_articles(hours: int = LOOKBACK_HOURS) -> tuple[list[dict], int]
                 # Only decode Google redirects for within-window articles;
                 # out-of-window entries are counted but never scored.
                 real_link, is_fallback = _extract_real_url(entry, title, decode=within)
-                dedup_key = real_link
+                dedup_key = normalise_url(real_link)
                 if dedup_key in seen_links:
                     continue
                 seen_links.add(dedup_key)
@@ -360,9 +416,9 @@ def fetch_recent_articles(hours: int = LOOKBACK_HOURS) -> tuple[list[dict], int]
 
             for entry in entries:
                 link = getattr(entry, "link", "")
-                if not link or link in seen_links:
+                if not link or normalise_url(link) in seen_links:
                     continue
-                seen_links.add(link)
+                seen_links.add(normalise_url(link))
 
                 within, pub_dt = is_within_hours(entry, hours)
                 title = getattr(entry, "title", "").strip()
@@ -702,7 +758,12 @@ def send_email(article: dict) -> bool:
 <hr>
 <p style="color:#888;font-size:12px;">Sent by Sports D3c0d3d daily monitor. Article scored {score}/5 for Irish sportstech relevance.</p>"""
 
-    _send_email(subject, html_body, cc=os.getenv("ALERT_CC"))
+    try:
+        _send_email(subject, html_body, cc=os.getenv("ALERT_CC"))
+    except Exception as exc:
+        # One failed email must never kill the run — the caller queues it as unsent.
+        log.error("Email send failed for '%s': %s", title[:80], exc)
+        return False
     return True
 
 
@@ -835,6 +896,21 @@ def run() -> bool:
         print("No new high-scoring articles found today.")
         return True
 
+    # 1b. Drop blocklisted sources before scoring, so they cost no tokens
+    blocked = [a for a in recent_articles if is_blocked_url(a.get("link", ""))]
+    if blocked:
+        recent_articles = [a for a in recent_articles if not is_blocked_url(a.get("link", ""))]
+        log.info("Blocklist: dropped %d article(s) before scoring", len(blocked))
+        for a in blocked:
+            log.debug("Blocked: %s", a.get("link", "")[:120])
+    if not recent_articles:
+        log.info("No articles left after blocklist — exiting.")
+        print("=== Daily Monitor Complete ===")
+        print(f"Articles fetched: {total_fetched}")
+        print(f"Blocklisted (not scored): {len(blocked)}")
+        print("No new high-scoring articles found today.")
+        return True
+
     # 2. Score
     scored = score_articles(recent_articles)
 
@@ -846,7 +922,7 @@ def run() -> bool:
     high   = [a for a in scored if int(a.get("score", 0)) >= MIN_SCORE]
 
     # 3. Deduplicate against seen
-    new_articles   = [a for a in high if a.get("link", "") not in seen]
+    new_articles   = [a for a in high if normalise_url(a.get("link", "")) not in seen]
     already_seen_n = len(high) - len(new_articles)
 
     if not new_articles:
@@ -877,31 +953,36 @@ def run() -> bool:
             log.warning("Supabase upsert failed: %s", article.get("title", "")[:80])
     log.info("Supabase: upserted %d/%d items to hub", hub_upsert_count, len(new_articles))
 
-    # 4. Send emails
+    # 4. Send emails. Seen is saved after every successful send, and again in the
+    # finally, so an email that went out is never re-sent by the next run — the
+    # 2026-09-26 run crashed mid-loop and lost the seen entries for 10 sent emails.
     sent_count = 0
-    for article in new_articles:
-        title = article.get("title", "")
-        if send_email(article):
-            seen.add(article["link"])
-            sent_count += 1
-            log.info("Email sent: [Score %s] %s", article.get("score"), title[:80])
-        else:
-            unsent.append(article)
-            log.warning("Email failed — queued for unsent log: %s", title[:80])
+    try:
+        for article in new_articles:
+            title = article.get("title", "")
+            if send_email(article):
+                seen.add(normalise_url(article["link"]))
+                save_seen(seen)
+                sent_count += 1
+                log.info("Email sent: [Score %s] %s", article.get("score"), title[:80])
+            else:
+                unsent.append(article)
+                log.warning("Email failed — queued for unsent log: %s", title[:80])
+    finally:
+        # 5. Persist seen list
+        save_seen(seen)
 
-    # 5. Persist seen list
-    save_seen(seen)
-
-    # 6. Save any unsent
-    if unsent:
-        unsent_path = f"daily_alerts_unsent_{datetime.now().strftime('%Y-%m-%d')}.json"
-        with open(unsent_path, "w", encoding="utf-8") as f:
-            json.dump(unsent, f, ensure_ascii=False, indent=2)
-        log.warning("Saved %d unsent alerts to %s", len(unsent), unsent_path)
+        # 6. Save any unsent
+        if unsent:
+            unsent_path = f"daily_alerts_unsent_{datetime.now().strftime('%Y-%m-%d')}.json"
+            with open(unsent_path, "w", encoding="utf-8") as f:
+                json.dump(unsent, f, ensure_ascii=False, indent=2)
+            log.warning("Saved %d unsent alerts to %s", len(unsent), unsent_path)
 
     print("=== Daily Monitor Complete ===")
     print(f"Articles fetched: {total_fetched}")
     print(f"After {LOOKBACK_HOURS}hr filter: {len(recent_articles)}")
+    print(f"Blocklisted (not scored): {len(blocked)}")
     print(f"Scored {MIN_SCORE}+: {len(high)}")
     print(f"Already seen (skipped): {already_seen_n}")
     print(f"After story dedup: {len(new_articles)} (removed {dedup_removed} duplicate(s))")

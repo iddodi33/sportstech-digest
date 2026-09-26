@@ -1,6 +1,6 @@
 # CLAUDE.md — sportstech-digest
 
-*Last updated: 2026-09-04*
+*Last updated: 2026-09-26*
 
 ---
 
@@ -35,6 +35,8 @@ sportstech-digest/
   carousel_slides.py             Carousel slide layouts and PDF assembly, imported by weekly_cover.py (added 2026-09-05)
   assets/cover/                  Brand assets for the cover (logo PNG, Bebas Neue TTF)
   supabase_client.py             News: upserts scored articles to hub
+  email_client.py                Resend wrapper for all pipelines — 150ms send spacing, 429 retry x3
+  test_daily_monitor.py          Offline tests: normalise_url, blocklist, Resend 429 retry, send loop
   jobs_pipeline/                 Weekly jobs scraper (Friday 06:00 UTC)
     classifier.py                Rule pre-filter + Haiku classifier
     relevance_filter.py          Rule-based title noise filter, shared by both LinkedIn adapters
@@ -219,6 +221,7 @@ All scheduled workflows support `workflow_dispatch`.
 # News pipeline
 python daily_monitor.py
 python digest.py
+python test_daily_monitor.py            # offline, no network or billed calls
 
 # Jobs — single adapter
 python jobs_pipeline/run_greenhouse.py
@@ -270,7 +273,7 @@ The local Norton TLS proxy (`nllMonFltProxy`) intercepts HTTPS with a CA that Py
 
 - Daily news email format and score 3+ alert logic
 - Monthly news email with markdown attachment
-- `daily_monitor_seen.json` dedup logic
+- `daily_monitor_seen.json` dedup logic — keyed on `normalise_url()` since 2026-09-26 (changed at Iddo's request). `normalise_url()` must stay idempotent: entries are stored normalised and normalised again on load
 - News scoring criteria for scores 1, 2, 5
 - `upsert_job` RPC signature (10 args)
 - `upsert_news_item_if_higher_score` RPC signature (12 args)
